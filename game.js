@@ -88,19 +88,9 @@ class Game {
         this.init();
     }
 
-    // Добавьте в начало класса Game, после конструктора:
     isMobile() {
         return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
     }
-
-    // И в методе init() после loadFromStorage() добавьте:
-    if(this.isMobile()) {
-    // Уменьшаем количество гексов для мобильных устройств
-    this.COLS = 18;
-    this.ROWS = 24;
-    this.initHexes();
-    this.drawMap();
-}
 
     init() {
         this.initHexes();
@@ -377,33 +367,30 @@ class Game {
             }
 
             if (city) {
-                // Определяем размер шрифта в зависимости от устройства
-                let isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-                let fontSize = isMobile ? 14 : 11;
-
+                let fontSize = 11;
                 ctx.font = `bold ${fontSize}px consolas`;
                 ctx.fillStyle = "#ffefcf";
                 let shortName = city.name.length > 6 ? city.name.substring(0, 6) : city.name;
-                ctx.fillText(shortName + "(" + city.strength + ")", h.x - 18, h.y - 10);
+                ctx.fillText(shortName + "(" + city.strength + ")", h.x - 16, h.y - 8);
                 ctx.font = `${fontSize}px consolas`;
                 ctx.fillStyle = "#ffd966";
-                ctx.fillText(city.gold, h.x - 14, h.y + 6);
+                ctx.fillText(city.gold, h.x - 12, h.y + 4);
                 ctx.fillStyle = "#ffaa66";
-                ctx.fillText(city.army, h.x - 14, h.y + 18);
+                ctx.fillText(city.army, h.x - 12, h.y + 12);
 
                 if (city.hasQuarry) {
                     ctx.fillStyle = "#b0a070";
-                    ctx.font = `${fontSize}px Georgia`;
+                    ctx.font = `${fontSize - 1}px Georgia`;
                     ctx.fillText("⛏️", h.x + 12, h.y - 6);
                 }
                 if (city.hasSawmill) {
                     ctx.fillStyle = "#90c070";
-                    ctx.font = `${fontSize}px Georgia`;
+                    ctx.font = `${fontSize - 1}px Georgia`;
                     ctx.fillText("🪵", h.x + 12, h.y + 4);
                 }
                 if (city.siegeWeapons > 0) {
                     ctx.fillStyle = "#d09050";
-                    ctx.font = `${fontSize}px Georgia`;
+                    ctx.font = `${fontSize - 1}px Georgia`;
                     ctx.fillText("🏹" + city.siegeWeapons, h.x + 12, h.y + 14);
                 }
             }
@@ -638,12 +625,9 @@ class Game {
         let available = [];
         for (let h of this.hexes) {
             let existingCity = this.getCityAtHex(h);
-            // Проверяем, что гекс пустой, не вода, и не соседствует с другими городами
             if (!existingCity && h.terrain !== "water") {
                 let distFromSource = Math.abs(h.row - cityHex.row) + Math.abs(h.col - cityHex.col);
-                // Расстояние от города-источника должно быть от 2 до 3 (не соседний)
                 if (distFromSource >= 2 && distFromSource <= 3) {
-                    // Дополнительно проверяем, что рядом нет других городов
                     let hasNeighborCity = false;
                     for (let dr = -1; dr <= 1; dr++) {
                         for (let dc = -1; dc <= 1; dc++) {
@@ -675,9 +659,7 @@ class Game {
                     let existingCity = this.getCityAtHex(h);
                     if (!existingCity && h.terrain !== "water") {
                         let dist = Math.abs(h.row - cityHex.row) + Math.abs(h.col - cityHex.col);
-                        // Расстояние от 2 до 3
                         if (dist >= 2 && dist <= 3) {
-                            // Проверяем, что рядом нет других городов
                             let hasNeighborCity = false;
                             for (let dr = -1; dr <= 1; dr++) {
                                 for (let dc = -1; dc <= 1; dc++) {
@@ -1305,19 +1287,6 @@ class Game {
 
         let canvas = document.getElementById("mapCanvas");
         canvas.addEventListener("click", (e) => this.handleCanvasClick(e));
-
-        // Добавьте touch-события для телефона
-        canvas.addEventListener("touchstart", (e) => {
-            e.preventDefault();
-            let touch = e.touches[0];
-            let rect = canvas.getBoundingClientRect();
-            let mx = (touch.clientX - rect.left) * (canvas.width / rect.width);
-            let my = (touch.clientY - rect.top) * (canvas.height / rect.height);
-
-            // Создаём искусственное событие клика
-            let fakeEvent = { clientX: touch.clientX, clientY: touch.clientY };
-            this.handleCanvasClick(fakeEvent);
-        });
     }
 
     handleCanvasClick(e) {
@@ -1337,7 +1306,6 @@ class Game {
             return;
         }
 
-        // Проверка, что рядом нет других городов (для строительства новых городов)
         let hasNearbyCity = false;
         for (let dr = -1; dr <= 1; dr++) {
             for (let dc = -1; dc <= 1; dc++) {
