@@ -102,21 +102,68 @@ class Game {
 
     initHexes() {
         this.hexes = [];
+
+        // Карта рельефа: m - горы, f - лес, w - вода, p - равнина
+        const terrainMap = [
+            "wwwwwmmmmmmmmmmmmmmmmmmwwwwwwwwwwwww",
+            "wwwwwppppppppmmmmpppppppwwpwwwwwwwww",
+            "wwwwwpppppppppmmmmmmppfpfpfpwwwpwwwww",
+            "wwwwwppppfppppwwpmmmpffpppwwwwmwwwww",
+            "wwpppppmmmmpppppppppppppppppppppppww",
+            "wwppppmmmmmpppppppppppppppppppppppww",
+            "wwpppmmmmmmpppppppffffffffppppppppww",
+            "wwppmmmmmmmpppppppffffffffppppppppww",
+            "wwppmmmmmpppppppppffffffffppppppppww",
+            "wwpppmmmmpppppppppppppppppppppppppww",
+            "wwpppppmmpppppppppppppppppppppppppww",
+            "wwppppppppppppppppppppppppppppppppww",
+            "wwpppppppppppfffffppppppppppppppppww",
+            "wwpppppppppppfffffppppppppppppppppww",
+            "wwpppppppppppfffffppppppppppppppppww",
+            "wwppppppppppppppppppppppppppppppppww",
+            "wwppppppppppppppppppppppppppppppppww",
+            "wwppppppmmmmppppppppppppppppppppppww",
+            "wwpppppppmmmmmppppppppppppppppppppww",
+            "wwppppppppmmmmmpppppppppppppppppppww",
+            "wwpppppppppmmmmpppppppppppppppppppww",
+            "wwppppppppppppppppppppppppppppppppww",
+            "wwppppppppppppppppppppppppppppppppww",
+            "wwpppppppppppfffffppppppppppppppppww",
+            "wwpppppppppppfffffppppppppppppppppww",
+            "wwpppppppppppfffffppppppppppppppppww",
+            "wwppppppppppppppppppppppppppppppppww",
+            "wwppppppppppppppppppppppppppppppppww",
+            "wwppppppmmmmppppppppppppppppppppppww",
+            "wwpppppppmmmmmppppppppppppppppppppww",
+            "wwppppppppmmmmmpppppppppppppppppppww",
+            "wwpppppppppmmmmpppppppppppppppppppww",
+            "wwppppppppppppppppppppppppppppppppww",
+            "wwppppppppppppppppppppppppppppppppww",
+            "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+            "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww"
+        ];
+
         for (let row = 0; row < this.ROWS; row++) {
             for (let col = 0; col < this.COLS; col++) {
                 let offX = (row % 2 === 0) ? 0 : this.HEX_W / 2;
                 let x = col * this.HEX_W + offX + this.HEX_W / 2 + this.PAD_X;
                 let y = row * this.HEX_W * 0.85 + this.HEX_W / 2 + this.PAD_Y;
 
+                // Определяем рельеф из карты
                 let terrain = "plain";
-                let rand = Math.random();
-                if (rand < 0.15) terrain = "mountain";
-                else if (rand < 0.3) terrain = "forest";
-                else if (rand < 0.4) terrain = "water";
+                if (row < terrainMap.length && col < terrainMap[row].length) {
+                    let t = terrainMap[row][col];
+                    if (t === 'm') terrain = "mountain";
+                    else if (t === 'f') terrain = "forest";
+                    else if (t === 'w') terrain = "water";
+                    else terrain = "plain";
+                }
 
                 this.hexes.push({ row, col, x, y, cityId: null, terrain: terrain });
             }
         }
+
+        console.log("Карта рельефа загружена, первый гекс:", this.hexes[0]?.terrain);
     }
 
     setupPlayerNamesPanel() {
