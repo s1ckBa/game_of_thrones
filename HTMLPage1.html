@@ -1,0 +1,74 @@
+﻿<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes, viewport-fit=cover"><title>Престолы - Эпоха Домов</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="app">
+        <div id="mainMenu" class="menu-overlay">
+            <div class="menu-container">
+                <h1>ПРЕСТОЛЫ</h1>
+                <h3>Великая стратегия</h3>
+
+                <div class="menu-options">
+                    <div class="player-count-selector">
+                        <label>Количество игроков:</label>
+                        <select id="playerCountSelect">
+                            <option value="2">2 игрока</option>
+                            <option value="3" selected>3 игрока</option>
+                            <option value="4">4 игрока</option>
+                            <option value="5">5 игроков</option>
+                            <option value="6">6 игроков</option>
+                        </select>
+                    </div>
+
+                    <div id="playerNamesPanel" class="player-names"></div>
+
+                    <button id="startGameBtn" class="btn-primary">Начать игру</button>
+                    <button id="loadGameBtn" class="btn-secondary">Загрузить сохранение</button>
+                </div>
+
+                <div class="game-info">
+                    <p>Игра автоматически сохраняется после каждого хода</p>
+                    <p>Стройте города, заключайте союзы, управляйте династией</p>
+                    <p>Цель: стать единственным правителем</p>
+                </div>
+            </div>
+        </div>
+
+        <div id="gameContainer" style="display:none;">
+            <div class="game-wrapper">
+                <div class="top-panel">
+                    <div class="map-area">
+                        <canvas id="mapCanvas"></canvas>
+                    </div>
+                    <div class="info-area">
+                        <div class="turn-header">
+                            <div>Ход <span id="turnCount">0</span></div>
+                            <div>Год <span id="currentYear">0</span></div>
+                            <div>Сейчас ходит: <span id="currentPlayerName">—</span></div>
+                        </div>
+                        <div class="status" id="globalMsg"></div>
+                        <div id="dynamicContent"></div>
+                        <div id="chroniclePanel" class="chronicle">
+                            <b>Летопись</b>
+                            <div id="chronicleList"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="action-bar">
+                    <button id="endTurnBtn" class="btn-action">Пропустить ход</button>
+                    <button id="diplomacyBtn" class="btn-action">Дипломатия</button>
+                    <button id="squireBtn" class="btn-action">Отдать в оруженосцы</button>
+                    <button id="saveGameBtn" class="btn-action">Сохранить</button>
+                    <button id="resetGameBtn" class="btn-action btn-danger">Сброс</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="game.js"></script>
+</body>
+</html>
