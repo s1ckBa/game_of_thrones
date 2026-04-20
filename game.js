@@ -14,6 +14,11 @@ class Person {
         this.squireYears = 0;
         this.knightChance = 30;
         this.isMarried = false;
+        this.isAlive = true;
+        this.isLord = false;
+        this.isHeir = false;
+        this.isRuler = false;
+        this.rulingCityId = null;
     }
 }
 
@@ -36,6 +41,8 @@ class City {
         this.hasQuarry = false;
         this.hasSawmill = false;
         this.siegeWeapons = 0;
+        this.isCapital = false;
+        this.rulerId = null;
     }
 }
 
@@ -75,6 +82,7 @@ class Game {
         this.selectLocationMode = false;
         this.pendingMarriageProposals = [];
         this.pendingSquireProposals = [];
+        this.pendingCityName = null;
 
         this.HEX_W = 20;
         this.HEX_R = 12;
@@ -88,6 +96,92 @@ class Game {
         this.init();
     }
 
+    // ========== МОДАЛЬНЫЕ ОКНА ==========
+
+    showConfirmModal(title, message, onConfirm, onCancel) {
+        return new Promise((resolve) => {
+            let modal = document.getElementById("eventModal");
+            let modalTitle = document.getElementById("modalTitle");
+            let modalMessage = document.getElementById("modalMessage");
+            let modalButtons = document.getElementById("modalButtons");
+
+            modalTitle.innerText = title;
+            modalMessage.innerText = message;
+            modalButtons.innerHTML = `
+                <button id="modalConfirmBtn" style="background:#5a8a4a; padding:8px 25px; margin:10px; border-radius:30px; cursor:pointer; border:none; color:white;">✅ Принять</button>
+                <button id="modalCancelBtn" style="background:#8a4a3a; padding:8px 25px; margin:10px; border-radius:30px; cursor:pointer; border:none; color:white;">❌ Отклонить</button>
+            `;
+            modal.style.display = "flex";
+
+            let confirmBtn = document.getElementById("modalConfirmBtn");
+            let cancelBtn = document.getElementById("modalCancelBtn");
+
+            let newConfirmBtn = confirmBtn.cloneNode(true);
+            let newCancelBtn = cancelBtn.cloneNode(true);
+            confirmBtn.parentNode.replaceChild(newConfirmBtn, confirmBtn);
+            cancelBtn.parentNode.replaceChild(newCancelBtn, cancelBtn);
+
+            newConfirmBtn.onclick = () => {
+                modal.style.display = "none";
+                if (onConfirm) onConfirm();
+                resolve(true);
+            };
+            newCancelBtn.onclick = () => {
+                modal.style.display = "none";
+                if (onCancel) onCancel();
+                resolve(false);
+            };
+        });
+    }
+
+    showPromptModal(title, message, defaultValue, callback) {
+        let modal = document.getElementById("eventModal");
+        let modalTitle = document.getElementById("modalTitle");
+        let modalMessage = document.getElementById("modalMessage");
+        let modalButtons = document.getElementById("modalButtons");
+
+        modalTitle.innerText = title;
+        modalMessage.innerText = message;
+        modalButtons.innerHTML = `
+            <input type="text" id="modalInput" value="${defaultValue}" style="width:90%; padding:8px; margin:10px 0; border-radius:20px; background:#f7efcf; border:none;">
+            <br>
+            <button id="modalConfirmBtn" style="background:#5a8a4a; padding:8px 25px; margin:10px; border-radius:30px; cursor:pointer; border:none; color:white;">✅ Подтвердить</button>
+            <button id="modalCancelBtn" style="background:#8a4a3a; padding:8px 25px; margin:10px; border-radius:30px; cursor:pointer; border:none; color:white;">❌ Отмена</button>
+        `;
+        modal.style.display = "flex";
+
+        let confirmBtn = document.getElementById("modalConfirmBtn");
+        let cancelBtn = document.getElementById("modalCancelBtn");
+
+        let newConfirmBtn = confirmBtn.cloneNode(true);
+        let newCancelBtn = cancelBtn.cloneNode(true);
+        confirmBtn.parentNode.replaceChild(newConfirmBtn, confirmBtn);
+        cancelBtn.parentNode.replaceChild(newCancelBtn, cancelBtn);
+
+        newConfirmBtn.onclick = () => {
+            let input = document.getElementById("modalInput");
+            let value = input ? input.value : defaultValue;
+            modal.style.display = "none";
+            if (callback) callback(value);
+        };
+        newCancelBtn.onclick = () => {
+            modal.style.display = "none";
+            if (callback) callback(defaultValue);
+        };
+
+        setTimeout(() => {
+            let input = document.getElementById("modalInput");
+            if (input) input.focus();
+        }, 100);
+    }
+
+    closeModal() {
+        let modal = document.getElementById("eventModal");
+        if (modal) {
+            modal.style.display = "none";
+        }
+    }
+
     isMobile() {
         return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
     }
@@ -98,47 +192,62 @@ class Game {
         this.setupEventListeners();
         this.setupPlayerNamesPanel();
         this.drawMap();
+
+        document.addEventListener("keydown", (e) => {
+            if (e.key === "Escape") {
+                this.closeModal();
+            }
+        });
     }
 
     initHexes() {
+        // ... ваш существующий код initHexes ...
         this.hexes = [];
-
-        // Карта рельефа: m - горы, f - лес, w - вода, p - равнина
         const terrainMap = [
             "wwwwwmmmmmmmmmmmmmmmmmmwwwwwwwwwwwww",
             "wwwwwppppppppmmmmpppppppwwpwwwwwwwww",
             "wwwwwpppppppppmmmmmmppfpfpfpwwwpwwwww",
             "wwwwwppppfppppwwpmmmpffpppwwwwmwwwww",
-            "wwpppppmmmmpppppppppppppppppppppppww",
-            "wwppppmmmmmpppppppppppppppppppppppww",
-            "wwpppmmmmmmpppppppffffffffppppppppww",
-            "wwppmmmmmmmpppppppffffffffppppppppww",
-            "wwppmmmmmpppppppppffffffffppppppppww",
-            "wwpppmmmmpppppppppppppppppppppppppww",
-            "wwpppppmmpppppppppppppppppppppppppww",
-            "wwppppppppppppppppppppppppppppppppww",
-            "wwpppppppppppfffffppppppppppppppppww",
-            "wwpppppppppppfffffppppppppppppppppww",
-            "wwpppppppppppfffffppppppppppppppppww",
-            "wwppppppppppppppppppppppppppppppppww",
-            "wwppppppppppppppppppppppppppppppppww",
-            "wwppppppmmmmppppppppppppppppppppppww",
-            "wwpppppppmmmmmppppppppppppppppppppww",
-            "wwppppppppmmmmmpppppppppppppppppppww",
-            "wwpppppppppmmmmpppppppppppppppppppww",
-            "wwppppppppppppppppppppppppppppppppww",
-            "wwppppppppppppppppppppppppppppppppww",
-            "wwpppppppppppfffffppppppppppppppppww",
-            "wwpppppppppppfffffppppppppppppppppww",
-            "wwpppppppppppfffffppppppppppppppppww",
-            "wwppppppppppppppppppppppppppppppppww",
-            "wwppppppppppppppppppppppppppppppppww",
-            "wwppppppmmmmppppppppppppppppppppppww",
-            "wwpppppppmmmmmppppppppppppppppppppww",
-            "wwppppppppmmmmmpppppppppppppppppppww",
-            "wwpppppppppmmmmpppppppppppppppppppww",
-            "wwppppppppppppppppppppppppppppppppww",
-            "wwppppppppppppppppppppppppppppppppww",
+            "wwwwwwwwwppppwwpmmmmppppfwwwmpwwww",
+            "wwwwwwwwwwwwwwwwpmmmmppppppwwwpwwwww",
+            "wwwwwwwwwwwppwwwmmmmmppffppwwwwwwwww",
+            "wwwwwwwwwwwwwwwmmmmmmpffppfffpppwwww",
+            "wwwwwwwpppwwwwwmmmmmfwppppppffpppwww",
+            "wwwwwwwwpppffffpppffpppppppfffwwwww",
+            "wwwwwwwwppfffpfffpppppppppppffwwwwww",
+            "wwwwwwwppffffpfffppppppppppwwwwwwwww",
+            "wwwwwpppppwppppffppppppppffpwwwwwwww",
+            "wwwwpppppppppwppppmmppppppppwwwwwwww",
+            "wwwwpppppppppppppmpppmpppppppwwwwwww",
+            "wwwwpwpppppppppppppppppppppwppwwwwww",
+            "wwwwwwwppwpppppppppppwppppwwwwwwwwww",
+            "wwwwwwwwppppfffffppppwwwwwwwwwwwwwww",
+            "wwwwwpppppppffffpppwwwwwwwwwwwwwwwww",
+            "wwwwwpppppppfffffppwwwppppppppwwwwww",
+            "wwwwwwwwwwwwwfffppppppmmmmppppwwwwww",
+            "wwwwwwwwwwwwwwffpppmmmmmmfffppmpwwww",
+            "wwwwwpwppwwwppwppppmmpffmpmmmmmpwww",
+            "wwwwwwppwppwwwwwppppmmmmmppppppppwww",
+            "wwwwwwwwwpppppppppppmmmmmmmmmpppwwww",
+            "wwwwwwwwwmmmmmmfpppppppffmmmmpwwwwww",
+            "wwwwwwwwpppmmfppppppppppmmppwwpwwwww",
+            "wwwwwwwwppppppppppppwwpppppppppwwwww",
+            "wwwwwpmpmmmmpmmmmppppppppppwwwwwwwww",
+            "wwwwwwwpppmpmpmmmmpppppppppwwwwwwwww",
+            "wwwwwwmmmpppppmmppppppppwwwwwpwwwwww",
+            "wwwwwwpfppfpppppppppppffpffpfpwwwwww",
+            "wwwwwffpfpppppppppppfffpfppwwwwww",
+            "wwwwwwpffppppppppppppppppffppppwwwww",
+            "wwwwwwppppppppppppppmfpmpmpppwwpwwww",
+            "wwwwwwwwwpppppppppmmmmmmmpmwwwwwwwww",
+            "wwwwwwwpppppppppppmmmmmmpmmfpffpwwww",
+            "wwwwwwwppmmpmppppppmmpppmmfpwwwwww",
+            "wwwwppppppmmmmmpppppwwwwwwwfpwwwwww",
+            "wwwwwppppppmmmmmmmmmmwwwwwwwwwwwwpww",
+            "wwwwwwwpppppmmpppmmmppppwwwwwpwwwww",
+            "wwwwwwppppmmpmpppppppppppppppmmmpwww",
+            "wwwwwwwpppwmmmpppppppppppppppppwwwww",
+            "wwwwppwwwwwwmppppppppppppppppwwwwwww",
             "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
             "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww"
         ];
@@ -149,7 +258,6 @@ class Game {
                 let x = col * this.HEX_W + offX + this.HEX_W / 2 + this.PAD_X;
                 let y = row * this.HEX_W * 0.85 + this.HEX_W / 2 + this.PAD_Y;
 
-                // Определяем рельеф из карты
                 let terrain = "plain";
                 if (row < terrainMap.length && col < terrainMap[row].length) {
                     let t = terrainMap[row][col];
@@ -162,8 +270,6 @@ class Game {
                 this.hexes.push({ row, col, x, y, cityId: null, terrain: terrain });
             }
         }
-
-        console.log("Карта рельефа загружена, первый гекс:", this.hexes[0]?.terrain);
     }
 
     setupPlayerNamesPanel() {
@@ -448,7 +554,18 @@ class Game {
         if (!this.gameStarted) return;
         let currentPlayer = this.players[this.currentPlayerIndex];
 
+        let ruler = currentPlayer.persons.find(p => p.isRuler === true);
+        let heir = currentPlayer.persons.find(p => p.isHeir === true);
+
         let html = `<h3>🏰 Дом ${currentPlayer.name}</h3>`;
+
+        if (ruler) {
+            html += `<div style="background:#00000044; border-radius:12px; padding:5px; margin-bottom:10px;">
+                👑 Правитель: ${ruler.name} (${ruler.role}, ${ruler.age} лет)
+                ${heir ? ` | 👨‍👦 Наследник: ${heir.name}` : ''}
+            </div>`;
+        }
+
         html += `<div style="font-size:12px; margin-bottom:10px;">💰 Золото: ${currentPlayer.cities.reduce((s, c) => s + c.gold, 0)} | ⚔️ Армия: ${currentPlayer.cities.reduce((s, c) => s + c.army, 0)}</div>`;
 
         for (let city of currentPlayer.cities) {
@@ -456,7 +573,8 @@ class Game {
             let icon = "";
             if (city.kind === "treasury") { cityClass = "treasury"; icon = "🏦 "; }
             else if (city.kind === "heir") { cityClass = "heir"; icon = "👑 "; }
-            else if (city.isStartCity) { cityClass = "lord"; icon = "🏰 "; }
+            else if (city.isStartCity && city.name === currentPlayer.name) { cityClass = "lord"; icon = "🏰 "; }
+            else if (city.isStartCity) { cityClass = "vassal"; icon = "⚔️ "; }
             else { cityClass = "vassal"; icon = "⚔️ "; }
 
             let governorText = "";
@@ -472,11 +590,13 @@ class Game {
             </div>`;
         }
 
+        // Семья лорда (основной дом)
         let lordFamily = currentPlayer.persons.filter(p => {
             if (!currentPlayer.vassalHouses) return true;
             for (let vh of currentPlayer.vassalHouses) {
-                if (vh.family.some(v => v.id === p.id)) return false;
+                if (vh.family && vh.family.some(v => v.id === p.id)) return false;
             }
+            if (currentPlayer.vassalFamily && currentPlayer.vassalFamily.some(v => v.id === p.id)) return false;
             return true;
         });
 
@@ -486,17 +606,34 @@ class Game {
             if (person.isMarried) status += ` 💍 Супруг(а): ${person.spouseName || "неизвестен"}`;
             if (person.isSquire) status += " ⚔️ Оруженосец";
             if (person.isKnight) status += " 🛡️ Рыцарь";
+            if (!person.isAlive) status += " 💀 Умер";
             html += `<div class="family-member" data-person="${person.id}">${person.name} (${person.role}, ${person.age} лет, ${person.gender === "male" ? "М" : "Ж"})${status}</div>`;
         }
 
+        // Семья вассала (начальный вассал)
+        if (currentPlayer.vassalFamily && currentPlayer.vassalFamily.length > 0) {
+            html += `<hr><h4>⚔️ Семья вассала ${currentPlayer.vassalHouseName || "Вассалы"}</h4>`;
+            for (let person of currentPlayer.vassalFamily) {
+                let status = "";
+                if (person.isMarried) status += ` 💍 Супруг(а): ${person.spouseName || "неизвестен"}`;
+                if (person.isSquire) status += " ⚔️ Оруженосец";
+                if (person.isKnight) status += " 🛡️ Рыцарь";
+                if (!person.isAlive) status += " 💀 Умер";
+                html += `<div class="family-member" data-person="${person.id}">${person.name} (${person.role}, ${person.age} лет, ${person.gender === "male" ? "М" : "Ж"})${status}</div>`;
+            }
+        }
+
+        // Остальные вассальные дома
         if (currentPlayer.vassalHouses && currentPlayer.vassalHouses.length > 0) {
             for (let vh of currentPlayer.vassalHouses) {
+                if (vh.houseName === currentPlayer.vassalHouseName) continue;
                 html += `<hr><h4>⚔️ Вассальный дом ${vh.houseName}</h4>`;
                 for (let person of vh.family) {
                     let status = "";
                     if (person.isMarried) status += ` 💍 Супруг(а): ${person.spouseName || "неизвестен"}`;
                     if (person.isSquire) status += " ⚔️ Оруженосец";
                     if (person.isKnight) status += " 🛡️ Рыцарь";
+                    if (!person.isAlive) status += " 💀 Умер";
                     html += `<div class="family-member" data-person="${person.id}">${person.name} (${person.role}, ${person.age} лет, ${person.gender === "male" ? "М" : "Ж"})${status}</div>`;
                 }
             }
@@ -536,15 +673,30 @@ class Game {
 
     showPersonInfo(person) {
         let html = `<div class="build-dialog">
-            <h3>${person.name}</h3>
-            <p>Роль: ${person.role}</p>
-            <p>Возраст: ${person.age} лет</p>
-            <p>Пол: ${person.gender === "male" ? "Мужской" : "Женский"}</p>
-            <p>Супруг(а): ${person.spouseName || "нет"}</p>
-            <p>Статус: ${person.isKnight ? "Рыцарь" : (person.isSquire ? "Оруженосец" : "Обычный")}</p>
-            <button id="closePersonInfo">Закрыть</button>
-        </div>`;
+        <h3>${person.name}</h3>
+        <p>Роль: ${person.role}</p>
+        <p>Возраст: ${person.age} лет</p>
+        <p>Пол: ${person.gender === "male" ? "Мужской" : "Женский"}</p>
+        <p>Супруг(а): ${person.spouseName || "нет"}</p>
+        <p>Статус: ${person.isKnight ? "Рыцарь" : (person.isSquire ? "Оруженосец" : "Обычный")}</p>
+        <p>Жив: ${person.isAlive ? "Да" : "Нет"}</p>`;
+
+        if (person.isSquire && !person.isKnight) {
+            html += `<button id="dismissSquireBtn" style="background:#8a4a3a;">❌ Снять с должности оруженосца</button>`;
+        }
+
+        html += `<button id="closePersonInfo">Закрыть</button>
+    </div>`;
         document.getElementById("dynamicContent").innerHTML = html;
+
+        if (person.isSquire && !person.isKnight) {
+            document.getElementById("dismissSquireBtn").onclick = () => {
+                person.isSquire = false;
+                person.squireYears = 0;
+                this.addChronicle(`${person.name} больше не является оруженосцем`);
+                this.updateUI();
+            };
+        }
         document.getElementById("closePersonInfo").onclick = () => this.updateUI();
     }
 
@@ -638,7 +790,7 @@ class Game {
 
     showAssignGovernor(city) {
         let currentPlayer = this.players[this.currentPlayerIndex];
-        let availablePersons = currentPlayer.persons.filter(p => p.age >= 16 && p.id !== city.governorId);
+        let availablePersons = currentPlayer.persons.filter(p => p.age >= 16 && p.id !== city.governorId && p.isAlive);
 
         if (availablePersons.length === 0) {
             alert("Нет доступных управляющих");
@@ -741,10 +893,16 @@ class Game {
         let maxInv = Math.min(6, sourceCity.gold);
         if (buildType === "treasury") maxInv = Math.min(2, sourceCity.gold);
 
+        let defaultName = "";
+        if (buildType === "treasury") defaultName = `${sourceCity.name} казна`;
+        else if (buildType === "heir") defaultName = `${sourceCity.name} наследник`;
+        else if (buildType === "vassal") defaultName = `${sourceCity.name} вассал`;
+
         let html = `<div class="build-dialog">
             <h3>Строительство города ${typeNames[buildType]} из ${sourceCity.name}</h3>
             <p>Доступно золота: ${sourceCity.gold}</p>
-            <input type="text" id="newCityName" placeholder="Название города" value="${sourceCity.name} ${typeNames[buildType].split(' ')[0]}" style="width:90%; margin:10px 0;">
+            <p><strong>🏷️ Название города:</strong></p>
+            <input type="text" id="newCityName" placeholder="Название города" value="${defaultName}" style="width:90%; padding:8px; margin:10px 0; border-radius:20px;">
             <div id="investOpts"></div>
             <button id="cancelBuild">Отмена</button>
         </div>`;
@@ -762,13 +920,32 @@ class Game {
     }
 
     startLocationSelection(sourceCity, investment, buildType, availableHexes) {
-        this.pendingBuildData = { sourceCity, investment, buildType, availableHexes };
+        let cityNameInput = document.getElementById("newCityName");
+        let savedCityName = cityNameInput ? cityNameInput.value.trim() : "";
+
+        if (!savedCityName) {
+            let typeNames = {
+                "treasury": "казначейство",
+                "heir": "наследник",
+                "vassal": "вассал"
+            };
+            savedCityName = `${sourceCity.name} ${typeNames[buildType]}`;
+        }
+
+        this.pendingBuildData = {
+            sourceCity,
+            investment,
+            buildType,
+            availableHexes,
+            savedCityName
+        };
         this.selectLocationMode = true;
         document.getElementById("globalMsg").innerHTML = "Выберите гекс для строительства (зелёный контур)";
         this.drawMap();
 
         let html = `<div class="build-dialog">
             <p>Нажмите на зелёный гекс на карте для строительства</p>
+            <p><strong>🏷️ Город будет называться: ${savedCityName}</strong></p>
             <button id="cancelLocation">Отмена</button>
         </div>`;
         document.getElementById("dynamicContent").innerHTML = html;
@@ -781,7 +958,7 @@ class Game {
 
     buildCityAtLocation(hex) {
         if (!this.pendingBuildData) return;
-        let { sourceCity, investment, buildType } = this.pendingBuildData;
+        let { sourceCity, investment, buildType, savedCityName } = this.pendingBuildData;
 
         if (sourceCity.gold < investment) {
             alert("Не хватает золота");
@@ -790,9 +967,6 @@ class Game {
             this.updateUI();
             return;
         }
-
-        let cityNameInput = document.getElementById("newCityName");
-        let customName = cityNameInput ? cityNameInput.value.trim() : "";
 
         let dice = Math.floor(Math.random() * 6) + 1;
         let finalStrength = (dice >= investment) ? investment : dice;
@@ -804,14 +978,7 @@ class Game {
         if (buildType === "treasury" && finalStrength > 2) finalStrength = 2;
         sourceCity.gold -= investment;
 
-        let typeNames = {
-            "treasury": "казначейство",
-            "heir": "наследник",
-            "vassal": "вассал"
-        };
-
-        let newName = customName || `${sourceCity.name} ${typeNames[buildType]}`;
-        let newCity = new City(Date.now() + Math.random(), hex.row, hex.col, newName, finalStrength, sourceCity.playerId, buildType, sourceCity.id);
+        let newCity = new City(Date.now() + Math.random(), hex.row, hex.col, savedCityName, finalStrength, sourceCity.playerId, buildType, sourceCity.id);
 
         if (buildType === "treasury") {
             newCity.treasuryForId = sourceCity.id;
@@ -820,85 +987,54 @@ class Game {
         let player = this.players.find(p => p.id === sourceCity.playerId);
         player.cities.push(newCity);
 
-        this.addChronicle(`${player.name} построил город ${newName} силой ${finalStrength} за ${investment} золота`);
+        this.addChronicle(`${player.name} построил город "${savedCityName}" силой ${finalStrength} за ${investment} золота`);
 
         if (buildType === "vassal") {
-            setTimeout(() => {
-                this.createNewVassalFamily(newCity, player);
-            }, 100);
+            this.createNewVassalFamilyWithCityName(newCity, player, savedCityName);
+        } else {
+            this.selectLocationMode = false;
+            this.pendingBuildData = null;
+            this.drawMap();
+            this.updateUI();
         }
-
-        this.selectLocationMode = false;
-        this.pendingBuildData = null;
-        this.drawMap();
-        this.updateUI();
     }
 
-    upgradeCity(city) {
-        if (city.strength >= 6) {
-            alert("Город уже максимальной силы");
-            return;
-        }
+    createNewVassalFamilyWithCityName(vassalCity, lordPlayer, cityName) {
+        let defaultHouseName = `${lordPlayer.name} Вассал`;
 
-        let cost = city.strength + 1;
-        let totalGold = city.gold;
-
-        let player = this.players.find(p => p.id === city.playerId);
-        let treasuries = player.cities.filter(c => c.kind === "treasury" && c.treasuryForId === city.id);
-        for (let treasury of treasuries) {
-            totalGold += treasury.gold;
-        }
-
-        if (totalGold < cost) {
-            alert(`Не хватает золота для улучшения. Нужно ${cost}, доступно ${totalGold} (включая казначейства)`);
-            return;
-        }
-
-        let remainingCost = cost;
-        for (let treasury of treasuries) {
-            if (remainingCost <= 0) break;
-            let take = Math.min(treasury.gold, remainingCost);
-            treasury.gold -= take;
-            remainingCost -= take;
-        }
-        if (remainingCost > 0) {
-            city.gold -= remainingCost;
-        }
-
-        city.strength++;
-        city.gold = Math.min(city.gold, city.strength);
-        city.army = Math.min(city.army, city.strength);
-
-        this.addChronicle(`${player.name} улучшил ${city.name} до силы ${city.strength}, потрачено ${cost} золота (включая средства из казначейств)`);
-        this.drawMap();
-        this.updateUI();
-    }
-
-    createNewVassalFamily(vassalCity, lordPlayer) {
         let html = `<div class="build-dialog">
             <h3>🏰 Создание нового вассального дома</h3>
-            <p>Город: <strong>${vassalCity.name}</strong></p>
-            <p>Название нового дома:</p>
-            <input type="text" id="newVassalHouseName" placeholder="Название дома" value="${lordPlayer.name} Вассал" style="width:90%; margin-bottom:15px;">
+            <p>Город: <strong>${vassalCity.name}</strong> (название города, которое вы ввели)</p>
+            <p>Название дома вассала (семьи):</p>
+            <input type="text" id="newVassalHouseName" placeholder="Название дома" value="${defaultHouseName}" style="width:90%; margin-bottom:15px; padding:8px; border-radius:20px;">
             <button id="rollNewVassalFamilyBtn" class="game-btn" style="font-size: 18px;">🎲 Бросить кубик (1-6 членов семьи)</button>
             <div id="newVassalFamilySizeResult" style="margin-top:15px;"></div>
+            <button id="cancelVassalCreation" style="margin-top:10px;">Отмена</button>
         </div>`;
         document.getElementById("dynamicContent").innerHTML = html;
 
         document.getElementById("rollNewVassalFamilyBtn").onclick = () => {
             let dice = Math.floor(Math.random() * 6) + 1;
             document.getElementById("newVassalFamilySizeResult").innerHTML = `<span class="dice-big">Выпало ${dice} членов семьи</span>`;
-            setTimeout(() => this.inputNewVassalFamily(dice, vassalCity, lordPlayer), 800);
+            setTimeout(() => this.inputNewVassalFamilyWithCityName(dice, vassalCity, lordPlayer), 800);
         };
+
+        if (document.getElementById("cancelVassalCreation")) {
+            document.getElementById("cancelVassalCreation").onclick = () => {
+                this.selectLocationMode = false;
+                this.pendingBuildData = null;
+                this.updateUI();
+            };
+        }
     }
 
-    inputNewVassalFamily(count, vassalCity, lordPlayer) {
+    inputNewVassalFamilyWithCityName(count, vassalCity, lordPlayer) {
         let houseName = document.getElementById("newVassalHouseName").value.trim() || `${lordPlayer.name} Вассал`;
-        vassalCity.name = houseName;
 
         let vassalRoles = ["Лорд", "Супруга", "Наследник", "Дочь", "Брат", "Сестра", "Рыцарь", "Мейстер", "Оруженосец"];
 
         let html = `<h3>👨‍👩‍👧‍👦 Создание семьи вассального дома ${houseName}</h3>
+                <p>Город: <strong>${vassalCity.name}</strong> (название города остаётся)</p>
                 <p>Всего членов семьи: ${count}</p>`;
         for (let i = 0; i < count; i++) {
             let defaultRole = i === 0 ? "Лорд" : vassalRoles[Math.floor(Math.random() * vassalRoles.length)];
@@ -944,6 +1080,7 @@ class Game {
                 id: Date.now() + Math.random(),
                 houseName: houseName,
                 cityId: vassalCity.id,
+                cityName: vassalCity.name,
                 family: vassalPersons
             };
 
@@ -951,40 +1088,559 @@ class Game {
             lordPlayer.vassalHouses.push(newVassalHouse);
             lordPlayer.persons.push(...vassalPersons);
 
-            this.addChronicle(`🏰 Создан новый вассальный дом ${houseName} с семьёй из ${count} человек`);
-            this.updateUI();
+            this.addChronicle(`🏰 Создан новый вассальный дом ${houseName} с городом "${vassalCity.name}" и семьёй из ${count} человек`);
+
+            this.selectLocationMode = false;
+            this.pendingBuildData = null;
             this.drawMap();
+            this.updateUI();
         };
     }
 
+    upgradeCity(city) {
+        if (city.strength >= 6) {
+            alert("Город уже максимальной силы");
+            return;
+        }
+
+        if (city.kind === "treasury" && !city.governorId && city.strength >= 2) {
+            alert("🏦 Город-казначейство не может быть улучшен выше силы 2 без назначенного управляющего!\nСначала назначьте управляющего через кнопку '👤 Назначить управляющего'.");
+            return;
+        }
+
+        let cost = city.strength + 1;
+        let totalGold = city.gold;
+
+        let player = this.players.find(p => p.id === city.playerId);
+        let treasuries = player.cities.filter(c => c.kind === "treasury" && c.treasuryForId === city.id);
+        for (let treasury of treasuries) {
+            totalGold += treasury.gold;
+        }
+
+        if (totalGold < cost) {
+            alert(`Не хватает золота для улучшения. Нужно ${cost}, доступно ${totalGold} (включая казначейства)`);
+            return;
+        }
+
+        let remainingCost = cost;
+        for (let treasury of treasuries) {
+            if (remainingCost <= 0) break;
+            let take = Math.min(treasury.gold, remainingCost);
+            treasury.gold -= take;
+            remainingCost -= take;
+        }
+        if (remainingCost > 0) {
+            city.gold -= remainingCost;
+        }
+
+        city.strength++;
+        city.gold = Math.min(city.gold, city.strength);
+        city.army = Math.min(city.army, city.strength);
+
+        this.addChronicle(`${player.name} улучшил ${city.name} до силы ${city.strength}, потрачено ${cost} золота (включая средства из казначейств)`);
+        this.drawMap();
+        this.updateUI();
+    }
+
     processBirths(player) {
-        let couples = [];
-        for (let person of player.persons) {
-            if (person.spouseId && person.gender === "female" && person.age >= 16 && person.age <= 45) {
-                let spouse = player.persons.find(p => p.id === person.spouseId);
-                if (spouse && spouse.age >= 16 && spouse.age <= 45) {
-                    couples.push({ mother: person, father: spouse });
+        console.log("=== processBirths для игрока:", player.name);
+
+        // Собираем все семьи игрока
+        let allFamilies = [];
+
+        // Основная семья
+        allFamilies.push({
+            name: player.name,
+            type: "main",
+            persons: player.persons.filter(p => {
+                if (!player.vassalHouses) return true;
+                for (let vh of player.vassalHouses) {
+                    if (vh.family && vh.family.some(v => v.id === p.id)) return false;
+                }
+                if (player.vassalFamily && player.vassalFamily.some(v => v.id === p.id)) return false;
+                return true;
+            }),
+            addPerson: (person) => player.persons.push(person)
+        });
+
+        // Начальный вассал
+        if (player.vassalFamily && player.vassalFamily.length > 0) {
+            allFamilies.push({
+                name: player.vassalHouseName || "Вассалы",
+                type: "vassal",
+                persons: player.vassalFamily,
+                addPerson: (person) => {
+                    player.vassalFamily.push(person);
+                    player.persons.push(person);
+                }
+            });
+        }
+
+        // Другие вассальные дома
+        if (player.vassalHouses) {
+            for (let vh of player.vassalHouses) {
+                if (vh.houseName !== player.vassalHouseName) {
+                    allFamilies.push({
+                        name: vh.houseName,
+                        type: "vassal",
+                        persons: vh.family,
+                        addPerson: (person) => {
+                            vh.family.push(person);
+                            player.persons.push(person);
+                        }
+                    });
                 }
             }
         }
 
-        for (let couple of couples) {
-            let chance = Math.floor(Math.random() * 100) + 1;
-            if (chance <= 50) {
-                let gender = Math.random() < 0.5 ? "male" : "female";
-                let role = gender === "male" ? "Сын" : "Дочь";
-                let defaultName = gender === "male" ? "Новорождённый" : "Новорождённая";
-                let name = prompt(`🎉 В семье Дома ${player.name} родился ${gender === "male" ? "сын" : "дочь"}!\nДайте имя ребёнку:`, defaultName);
-                if (!name) name = defaultName;
-                let child = new Person(Date.now() + Math.random(), name, role, 0, gender, couple.father.id, couple.mother.id);
-                player.persons.push(child);
-                this.addChronicle(`В семье Дома ${player.name} родился ${gender === "male" ? "сын" : "дочь"} ${name}`);
+        // Для каждой семьи проверяем пары
+        for (let family of allFamilies) {
+            let couples = [];
+            for (let person of family.persons) {
+                if (person.spouseId && person.gender === "female" && person.age >= 16 && person.age <= 45 && person.isAlive) {
+                    let spouse = family.persons.find(p => p.id === person.spouseId);
+                    if (spouse && spouse.age >= 16 && spouse.age <= 45 && spouse.isAlive) {
+                        couples.push({ mother: person, father: spouse });
+                    }
+                }
+            }
+
+            console.log(`Семья ${family.name}: найдено ${couples.length} пар`);
+
+            for (let couple of couples) {
+                // 50% вероятность рождения ребёнка
+                let chance = Math.floor(Math.random() * 100) + 1;
+                console.log(`Пара ${couple.mother.name} и ${couple.father.name}: шанс ${chance}%`);
+                if (chance <= 50) {
+                    let gender = Math.random() < 0.5 ? "male" : "female";
+                    let role = gender === "male" ? "Сын" : "Дочь";
+                    let defaultName = gender === "male" ? "Новорождённый" : "Новорождённая";
+                    let fatherName = couple.father.name;
+                    let motherName = couple.mother.name;
+
+                    let message = `👶 В семье Дома ${family.name} родился ${gender === "male" ? "сын" : "дочь"}!\nОтец: ${fatherName}\nМать: ${motherName}\n\nДайте имя ребёнку:`;
+                    this.showPromptModal("🎉 Рождение ребёнка", message, defaultName, (name) => {
+                        if (!name) name = defaultName;
+                        let child = new Person(Date.now() + Math.random(), name, role, 0, gender, couple.father.id, couple.mother.id);
+                        family.addPerson(child);
+                        this.addChronicle(`👶 В семье Дома ${family.name} у ${fatherName} и ${motherName} родился ${gender === "male" ? "сын" : "дочь"} ${name}`);
+                        this.updateUI();
+                    });
+                }
+            }
+        }
+
+        // Смерть от старости
+        for (let person of player.persons) {
+            if (person.age >= 60 && !person.isRuler && person.isAlive) {
+                // Шанс смерти растёт с каждым годом
+                let deathChance = 35 + (person.age - 60) * 10;
+                deathChance = Math.min(deathChance, 95);
+                let roll = Math.floor(Math.random() * 100) + 1;
+                if (roll <= deathChance) {
+                    person.isAlive = false;
+                    this.addChronicle(`💀 ${person.name} из Дома ${player.name} умер в возрасте ${person.age} лет (шанс ${deathChance}%)`);
+                    this.checkSuccession(player);
+                }
+            }
+            if (person.age >= 65 && person.isRuler && person.isAlive) {
+                let deathChance = 35 + (person.age - 65) * 10;
+                deathChance = Math.min(deathChance, 95);
+                let roll = Math.floor(Math.random() * 100) + 1;
+                if (roll <= deathChance) {
+                    person.isAlive = false;
+                    this.addChronicle(`💀 ${person.name}, правитель Дома ${player.name}, умер в возрасте ${person.age} лет (шанс ${deathChance}%)`);
+                    this.checkSuccession(player);
+                }
             }
         }
     }
 
-    checkPendingProposals() {
+    // Добавьте этот метод в класс Game
+    processKnighthood(player) {
+        for (let person of player.persons) {
+            if (person.isSquire && !person.isKnight && person.isAlive) {
+                // Шанс стать рыцарем: 35% + 10% за каждый год службы
+                let chance = 35 + (person.squireYears * 10);
+                chance = Math.min(chance, 95);
+                let roll = Math.floor(Math.random() * 100) + 1;
+                console.log(`${person.name}: шанс стать рыцарем ${chance}%, выпало ${roll}%`);
+                if (roll <= chance) {
+                    person.isKnight = true;
+                    person.isSquire = false;
+                    this.addChronicle(`⚔️ ${person.name} из Дома ${player.name} посвящён в рыцари!`);
+                    this.updateUI();
+                }
+            }
+        }
+    }
+
+    checkSuccession(player) {
+        let currentRuler = player.persons.find(p => p.isRuler === true && p.isAlive === true);
+        if (!currentRuler) {
+            currentRuler = player.persons.find(p => (p.role === "Лорд" || p.role === "Король") && p.isAlive === true);
+            if (currentRuler) {
+                currentRuler.isRuler = true;
+                this.addChronicle(`👑 ${currentRuler.name} стал новым правителем Дома ${player.name}`);
+            }
+        }
+
+        let deadRuler = player.persons.find(p => p.isRuler === true && p.isAlive === false);
+        if (deadRuler) {
+            this.handleRulerDeath(player, deadRuler);
+        }
+
+        let ruler = player.persons.find(p => p.isRuler === true && p.isAlive === true);
+        if (ruler) {
+            for (let p of player.persons) {
+                p.isHeir = false;
+            }
+            let heir = this.findHeir(player, ruler);
+            if (heir) {
+                heir.isHeir = true;
+            }
+        }
+    }
+
+    handleRulerDeath(player, deadRuler) {
+        this.addChronicle(`⚰️ Правитель Дома ${player.name} ${deadRuler.name} умер в возрасте ${deadRuler.age} лет`);
+
+        let heir = this.findHeir(player, deadRuler);
+
+        if (!heir) {
+            this.addChronicle(`⚠️ Дом ${player.name} остался без наследника! Игра окончена для этого дома.`);
+            return;
+        }
+
+        // Находим города, которыми владел умерший правитель
+        let rulerCities = player.cities.filter(c => c.rulerId === deadRuler.id || c.rulerId === null);
+
+        if (rulerCities.length === 0) {
+            // Нет своих городов
+            heir.isRuler = true;
+            heir.isLord = true;
+            heir.role = deadRuler.role === "Король" ? "Король" : "Лорд";
+            this.addChronicle(`👑 ${heir.name} стал новым правителем Дома ${player.name}, но не имеет земель`);
+            return;
+        }
+
+        // Показываем окно выбора наследства
+        this.showInheritanceMenu(player, heir, deadRuler, rulerCities);
+    }
+
+    showInheritanceMenu(player, heir, deadRuler, rulerCities) {
+        let message = `👑 ${heir.name} становится новым правителем Дома ${player.name}\n\n`;
+        message += `Умерший правитель владел городами:\n`;
+        for (let i = 0; i < rulerCities.length; i++) {
+            message += `${i + 1}. ${rulerCities[i].name} (сила ${rulerCities[i].strength})\n`;
+        }
+        message += `\nВыберите, сколько городов оставить себе (максимум 2):`;
+
+        let maxKeep = Math.min(2, rulerCities.length);
+
+        let html = `<div class="build-dialog">
+        <h3>👑 Наследование</h3>
+        <p>${heir.name} становится новым правителем Дома ${player.name}</p>
+        <p>Умерший правитель владел городами:</p>
+        <div id="citiesList"></div>
+        <p>Сколько городов вы хотите оставить под прямым управлением? (максимум ${maxKeep})</p>
+        <select id="keepCountSelect">
+            ${Array.from({ length: maxKeep + 1 }, (_, i) => `<option value="${i}">${i}</option>`).join("")}
+        </select>
+        <button id="confirmInheritanceBtn">Подтвердить</button>
+    </div>`;
+        document.getElementById("dynamicContent").innerHTML = html;
+
+        let citiesDiv = document.getElementById("citiesList");
+        for (let city of rulerCities) {
+            citiesDiv.innerHTML += `<div class="city-card" data-city-id="${city.id}">
+            <b>🏰 ${city.name}</b><br>
+            Сила: ${city.strength} | Золото: ${city.gold}
+        </div>`;
+        }
+
+        document.getElementById("confirmInheritanceBtn").onclick = () => {
+            let keepCount = parseInt(document.getElementById("keepCountSelect").value);
+            let citiesToKeep = rulerCities.slice(0, keepCount);
+            let citiesToDistribute = rulerCities.slice(keepCount);
+
+            // Оставляем выбранные города под управлением наследника
+            for (let city of citiesToKeep) {
+                city.rulerId = heir.id;
+                city.isCapital = (city === citiesToKeep[0]);
+                if (city === citiesToKeep[0]) {
+                    heir.rulingCityId = city.id;
+                    this.addChronicle(`🏰 ${heir.name} оставил себе город ${city.name} как столицу`);
+                } else {
+                    this.addChronicle(`🏰 ${heir.name} оставил себе город ${city.name}`);
+                }
+            }
+
+            // Делаем наследника правителем
+            heir.isRuler = true;
+            heir.isLord = true;
+            heir.role = deadRuler.role === "Король" ? "Король" : "Лорд";
+            this.addChronicle(`👑 ${heir.name} стал новым правителем Дома ${player.name}`);
+
+            // Распределяем остальные города
+            if (citiesToDistribute.length > 0) {
+                this.distributeInheritanceCities(player, heir, citiesToDistribute);
+            } else {
+                this.updateUI();
+            }
+        };
+    }
+
+    distributeInheritanceCities(player, newRuler, cities) {
+        if (cities.length === 0) {
+            this.updateUI();
+            return;
+        }
+
+        // Находим доступных членов семьи (не мейстеры и не септоны, не мертвые, не правитель, старше 16)
+        let availableFamily = player.persons.filter(p =>
+            p.isAlive === true &&
+            p.id !== newRuler.id &&
+            p.role !== "Мейстер" &&
+            p.role !== "Септон" &&
+            !p.isRuler &&
+            p.age >= 16
+        );
+
+        // Также можно передать вассальным домам
+        let availableVassals = [];
+        if (player.vassalHouses) {
+            for (let vh of player.vassalHouses) {
+                availableVassals.push({
+                    id: vh.id,
+                    name: vh.houseName,
+                    type: "vassal",
+                    persons: vh.family
+                });
+            }
+        }
+        if (player.vassalFamily && player.vassalFamily.length > 0) {
+            availableVassals.push({
+                id: "initial_vassal",
+                name: player.vassalHouseName || "Вассалы",
+                type: "vassal",
+                persons: player.vassalFamily
+            });
+        }
+
+        if (availableFamily.length === 0 && availableVassals.length === 0) {
+            // Нет никого - города остаются под прямым управлением
+            for (let city of cities) {
+                city.rulerId = newRuler.id;
+                this.addChronicle(`🏰 Город ${city.name} остаётся под прямым управлением ${newRuler.name}`);
+            }
+            this.updateUI();
+            return;
+        }
+
+        this.distributeInheritanceMenu(player, newRuler, cities, availableFamily, availableVassals);
+    }
+
+    distributeInheritanceMenu(player, newRuler, cities, availableFamily, availableVassals) {
+        if (cities.length === 0) {
+            this.updateUI();
+            return;
+        }
+
+        let city = cities[0];
+        let remainingCities = cities.slice(1);
+
+        let html = `<div class="build-dialog">
+        <h3>🏰 Распределение земель</h3>
+        <p>Город <strong>${city.name}</strong> (сила ${city.strength})</p>
+        <p>Выберите, кому передать этот город:</p>
+        <div id="familyList"></div>
+        <div id="vassalList"></div>
+        <button id="keepCity">Оставить под прямым управлением</button>
+        <button id="giveToNeighbor">Подарить соседнему дому</button>
+        <button id="skipCity">Пропустить (оставить под управлением)</button>
+    </div>`;
+        document.getElementById("dynamicContent").innerHTML = html;
+
+        let familyDiv = document.getElementById("familyList");
+        if (availableFamily.length > 0) {
+            familyDiv.innerHTML = "<h4>👑 Члены семьи:</h4>";
+            for (let person of availableFamily) {
+                familyDiv.innerHTML += `<div class="family-member" data-person-id="${person.id}" data-type="family">
+                ${person.name} (${person.role}, ${person.age} лет) - создать младшую ветвь
+            </div>`;
+            }
+        }
+
+        let vassalDiv = document.getElementById("vassalList");
+        if (availableVassals.length > 0) {
+            vassalDiv.innerHTML = "<h4>⚔️ Вассальные дома:</h4>";
+            for (let vassal of availableVassals) {
+                vassalDiv.innerHTML += `<div class="enemy-card" data-vassal-id="${vassal.id}" data-type="vassal" data-vassal-name="${vassal.name}">
+                🏰 Дом ${vassal.name}
+            </div>`;
+            }
+        }
+
+        document.querySelectorAll("[data-person-id]").forEach(el => {
+            el.onclick = () => {
+                let personId = parseFloat(el.dataset.personId);
+                let newLord = player.persons.find(p => p.id === personId);
+                if (newLord) {
+                    newLord.isLord = true;
+                    city.rulerId = newLord.id;
+                    this.addChronicle(`🏰 Город ${city.name} передан ${newLord.name}, основана младшая ветвь Дома ${player.name}`);
+
+                    // Удаляем из доступных
+                    let index = availableFamily.findIndex(p => p.id === personId);
+                    if (index !== -1) availableFamily.splice(index, 1);
+
+                    // Продолжаем с оставшимися городами
+                    if (remainingCities.length > 0) {
+                        this.distributeInheritanceMenu(player, newRuler, remainingCities, availableFamily, availableVassals);
+                    } else {
+                        this.updateUI();
+                    }
+                }
+            };
+        });
+
+        document.querySelectorAll("[data-vassal-id]").forEach(el => {
+            el.onclick = () => {
+                let vassalId = el.dataset.vassalId;
+                let vassalName = el.dataset.vassalName;
+                city.rulerId = null;
+                city.playerId = player.id; // остаётся у того же игрока, но под управлением вассала
+                this.addChronicle(`🏰 Город ${city.name} передан под управление вассала ${vassalName}`);
+
+                if (remainingCities.length > 0) {
+                    this.distributeInheritanceMenu(player, newRuler, remainingCities, availableFamily, availableVassals);
+                } else {
+                    this.updateUI();
+                }
+            };
+        });
+
+        document.getElementById("keepCity").onclick = () => {
+            city.rulerId = newRuler.id;
+            this.addChronicle(`🏰 Город ${city.name} остаётся под прямым управлением ${newRuler.name}`);
+
+            if (remainingCities.length > 0) {
+                this.distributeInheritanceMenu(player, newRuler, remainingCities, availableFamily, availableVassals);
+            } else {
+                this.updateUI();
+            }
+        };
+
+        document.getElementById("giveToNeighbor").onclick = () => {
+            let neighbors = [];
+            for (let otherPlayer of this.players) {
+                if (otherPlayer.id !== player.id) {
+                    neighbors.push(otherPlayer);
+                }
+            }
+
+            if (neighbors.length === 0) {
+                city.rulerId = newRuler.id;
+                this.addChronicle(`🏰 Город ${city.name} остаётся под управлением ${newRuler.name} (нет соседей)`);
+                if (remainingCities.length > 0) {
+                    this.distributeInheritanceMenu(player, newRuler, remainingCities, availableFamily, availableVassals);
+                } else {
+                    this.updateUI();
+                }
+            } else {
+                this.selectNeighborForGiftInheritance(player, newRuler, city, remainingCities, availableFamily, availableVassals, neighbors);
+            }
+        };
+
+        document.getElementById("skipCity").onclick = () => {
+            city.rulerId = newRuler.id;
+            if (remainingCities.length > 0) {
+                this.distributeInheritanceMenu(player, newRuler, remainingCities, availableFamily, availableVassals);
+            } else {
+                this.updateUI();
+            }
+        };
+    }
+
+    selectNeighborForGiftInheritance(player, newRuler, city, remainingCities, availableFamily, availableVassals, neighbors) {
+        let html = `<div class="build-dialog">
+        <h3>🎁 Подарок соседу</h3>
+        <p>Город <strong>${city.name}</strong> будет подарен:</p>
+        <div id="neighborsList"></div>
+        <button id="cancelGift">Отмена</button>
+    </div>`;
+        document.getElementById("dynamicContent").innerHTML = html;
+
+        let neighborsDiv = document.getElementById("neighborsList");
+        for (let neighbor of neighbors) {
+            neighborsDiv.innerHTML += `<div class="enemy-card" data-player-id="${neighbor.id}">
+            <b>🏰 Дом ${neighbor.name}</b>
+        </div>`;
+        }
+
+        document.querySelectorAll("[data-player-id]").forEach(el => {
+            el.onclick = () => {
+                let neighborId = parseInt(el.dataset.playerId);
+                let neighbor = this.players.find(p => p.id === neighborId);
+                city.playerId = neighborId;
+                city.rulerId = null;
+                neighbor.cities.push(city);
+                this.addChronicle(`🎁 Город ${city.name} подарен Дому ${neighbor.name}`);
+
+                if (remainingCities.length > 0) {
+                    this.distributeInheritanceMenu(player, newRuler, remainingCities, availableFamily, availableVassals);
+                } else {
+                    this.updateUI();
+                }
+            };
+        });
+
+        document.getElementById("cancelGift").onclick = () => {
+            city.rulerId = newRuler.id;
+            if (remainingCities.length > 0) {
+                this.distributeInheritanceMenu(player, newRuler, remainingCities, availableFamily, availableVassals);
+            } else {
+                this.updateUI();
+            }
+        };
+    }
+
+    findHeir(player, deadRuler) {
+        let sons = player.persons.filter(p => p.fatherId === deadRuler.id && p.gender === "male" && p.isAlive === true);
+        sons.sort((a, b) => a.age - b.age);
+        if (sons.length > 0) return sons[0];
+
+        let maleRelatives = player.persons.filter(p => p.gender === "male" && p.isAlive === true && p.id !== deadRuler.id && p.role !== "Мейстер" && p.role !== "Септон");
+        maleRelatives.sort((a, b) => a.age - b.age);
+        if (maleRelatives.length > 0) {
+            this.addChronicle(`⚠️ Прямых наследников нет. Новым правителем становится ${maleRelatives[0].name} из боковой ветви`);
+            return maleRelatives[0];
+        }
+
+        let daughters = player.persons.filter(p => p.fatherId === deadRuler.id && p.gender === "female" && p.isAlive === true);
+        daughters.sort((a, b) => a.age - b.age);
+        if (daughters.length > 0) {
+            let heiress = daughters[0];
+            this.addChronicle(`⚠️ Наследницей Дома ${player.name} стала ${heiress.name}. Род ${player.name} прервётся, продолжится по фамилии мужа.`);
+            return heiress;
+        }
+
+        let femaleRelatives = player.persons.filter(p => p.gender === "female" && p.isAlive === true && p.id !== deadRuler.id && p.role !== "Мейстер" && p.role !== "Септон");
+        femaleRelatives.sort((a, b) => a.age - b.age);
+        if (femaleRelatives.length > 0) {
+            let heiress = femaleRelatives[0];
+            this.addChronicle(`⚠️ Наследницей Дома ${player.name} стала ${heiress.name}. Род ${player.name} прервётся, продолжится по фамилии мужа.`);
+            return heiress;
+        }
+
+        return null;
+    }
+
+    async checkPendingProposals() {
         let currentPlayer = this.players[this.currentPlayerIndex];
+        console.log("Проверка предложений для игрока:", currentPlayer.name);
+        console.log("Предложений брака:", this.pendingMarriageProposals.length);
 
         let allCurrentPersons = [...currentPlayer.persons];
         if (currentPlayer.vassalHouses) {
@@ -994,26 +1650,39 @@ class Game {
         }
 
         let marriageProposals = this.pendingMarriageProposals.filter(p => p.toPlayerId === currentPlayer.id);
+        console.log("Предложений для этого игрока:", marriageProposals.length);
+
         for (let proposal of marriageProposals) {
             let fromPlayer = this.players.find(p => p.id === proposal.fromPlayerId);
             let targetPerson = allCurrentPersons.find(p => p.id === proposal.targetPersonId);
 
-            if (!targetPerson) {
+            if (!targetPerson || !targetPerson.isAlive) {
                 this.addChronicle(`❌ Персона для брака из дома ${proposal.toHouseName} больше не доступна`);
                 continue;
             }
 
-            let accept = confirm(`💍 Дом ${fromPlayer.name} предлагает брак между ${proposal.sourcePersonName} и ${targetPerson.name} (Дом ${proposal.toHouseName}). Принять?`);
-            if (accept) {
+            console.log(`Предложение от ${fromPlayer.name}: ${proposal.sourcePersonName} и ${targetPerson.name}`);
+
+            let message = `💍 Дом ${fromPlayer.name} предлагает брак между ${proposal.sourcePersonName} и ${targetPerson.name} (Дом ${proposal.toHouseName}). Принять?`;
+            let accepted = await this.showConfirmModal("Предложение брака", message, null, null);
+
+            if (accepted) {
                 let sourcePerson = fromPlayer.persons.find(p => p.id === proposal.sourcePersonId);
+                if (!sourcePerson && fromPlayer.vassalHouses) {
+                    for (let vh of fromPlayer.vassalHouses) {
+                        sourcePerson = vh.family.find(p => p.id === proposal.sourcePersonId);
+                        if (sourcePerson) break;
+                    }
+                }
                 if (sourcePerson && targetPerson) {
                     sourcePerson.spouseId = targetPerson.id;
-                    sourcePerson.spouseName = targetPerson.name;
+                    sourcePerson.spouseName = `${targetPerson.name} (Дом ${proposal.toHouseName})`;
                     sourcePerson.isMarried = true;
                     targetPerson.spouseId = sourcePerson.id;
-                    targetPerson.spouseName = sourcePerson.name;
+                    targetPerson.spouseName = `${sourcePerson.name} (Дом ${fromPlayer.name})`;
                     targetPerson.isMarried = true;
                     this.addChronicle(`💍 Заключён брак между ${sourcePerson.name} (Дом ${fromPlayer.name}) и ${targetPerson.name} (Дом ${proposal.toHouseName})`);
+                    this.updateUI();
                 }
             } else {
                 this.addChronicle(`❌ Дом ${proposal.toHouseName} отклонил предложение о браке`);
@@ -1025,13 +1694,15 @@ class Game {
         for (let proposal of squireProposals) {
             let fromPlayer = this.players.find(p => p.id === proposal.fromPlayerId);
             let boy = fromPlayer.persons.find(p => p.id === proposal.boyId);
-            if (boy) {
-                let accept = confirm(`🛡️ Дом ${fromPlayer.name} предлагает отдать ${boy.name} в оруженосцы вам. Принять?`);
-                if (accept) {
+            if (boy && boy.isAlive) {
+                let message = `🛡️ Дом ${fromPlayer.name} предлагает отдать ${boy.name} в оруженосцы вам. Принять?`;
+                let accepted = await this.showConfirmModal("Предложение оруженосца", message, null, null);
+                if (accepted) {
                     boy.isSquire = true;
                     boy.squireYears = 0;
                     boy.knightChance = 30;
                     this.addChronicle(`${boy.name} из Дома ${fromPlayer.name} отправлен в оруженосцы к Дому ${currentPlayer.name}`);
+                    this.updateUI();
                 } else {
                     this.addChronicle(`❌ Дом ${currentPlayer.name} отклонил предложение об оруженосце`);
                 }
@@ -1044,140 +1715,314 @@ class Game {
         let currentPlayer = this.players[this.currentPlayerIndex];
         currentPlayer.hasEndedTurn = true;
 
-        let allEnded = this.players.every(p => p.hasEndedTurn);
+        // Сохраняем состояние
+        this.saveToStorage();
+
+        let allEnded = this.players.every(p => p.hasEndedTurn === true);
+        console.log("Все игроки завершили ход?", allEnded);
 
         if (allEnded) {
+            // Проходят годы
             let years = Math.floor(Math.random() * 6) + 1;
             this.totalYears += years;
             this.currentTurn++;
+            console.log(`Прошло лет: ${years}, Ход: ${this.currentTurn}`);
 
+            // 1. Восстановление ресурсов
             for (let player of this.players) {
                 for (let city of player.cities) {
                     city.gold = Math.min(city.gold + 1, city.strength);
                     city.army = Math.min(city.army + 1, city.strength);
                 }
+            }
 
+            // 2. Старение персонажей
+            for (let player of this.players) {
                 for (let person of player.persons) {
-                    person.age += years;
-
-                    if (person.isSquire && !person.isKnight) {
-                        person.squireYears += years;
-                        if (person.age >= 16) {
-                            let chance = person.knightChance;
-                            let roll = Math.floor(Math.random() * 100) + 1;
-                            if (roll <= chance) {
-                                person.isKnight = true;
-                                person.isSquire = false;
-                                this.addChronicle(`${person.name} из Дома ${player.name} стал рыцарем`);
-                            } else {
-                                person.knightChance += 10;
-                            }
-                        }
+                    if (person.isAlive) {
+                        person.age += years;
                     }
                 }
+            }
 
+            // И вызовите его в endTurn после старения:
+            for (let player of this.players) {
+                this.processKnighthood(player);
+            }
+
+            // 3. Рождение детей (ВАЖНО: вызываем для каждого игрока)
+            for (let player of this.players) {
                 this.processBirths(player);
             }
 
+            // 4. Смерть и наследование (ВАЖНО: вызываем для каждого игрока)
+            for (let player of this.players) {
+                this.checkSuccession(player);
+            }
+
+            // 5. Сброс флагов
             for (let player of this.players) {
                 player.hasEndedTurn = false;
             }
 
+            // 6. Переключение на первого игрока
             this.currentPlayerIndex = 0;
+
+            // 7. Проверка предложений (ВАЖНО: после переключения)
             this.checkPendingProposals();
 
-            this.addChronicle(`Наступил ход ${this.currentTurn}. Прошло ${years} лет`);
+            // 8. Запись в хронику
+            this.addChronicle(`🌾 Наступил ход ${this.currentTurn}. Прошло ${years} ${years === 1 ? 'год' : (years < 5 ? 'года' : 'лет')}. Ресурсы восстановлены.`);
+
+            // 9. Обновление интерфейса
             this.drawMap();
             this.updateUI();
             this.saveToStorage();
+
+            document.getElementById("globalMsg").innerHTML = `✅ Ход ${this.currentTurn} начался. Ход игрока ${this.players[0].name}`;
         } else {
+            // Переключение на следующего игрока
             this.currentPlayerIndex = (this.currentPlayerIndex + 1) % this.players.length;
+            console.log(`Переключение на игрока: ${this.players[this.currentPlayerIndex].name}`);
+
+            // Проверяем предложения для следующего игрока
             this.checkPendingProposals();
+
             this.drawMap();
             this.updateUI();
+            this.saveToStorage();
+            document.getElementById("globalMsg").innerHTML = `Ход игрока ${this.players[this.currentPlayerIndex].name}`;
         }
-
-        document.getElementById("globalMsg").innerHTML = allEnded ? `Ход ${this.currentTurn} начался. Ход игрока ${this.players[this.currentPlayerIndex].name}` : `Ход игрока ${this.players[this.currentPlayerIndex].name}`;
     }
+
+    // ========== ДИПЛОМАТИЯ ==========
 
     showDiplomacy() {
         let currentPlayer = this.players[this.currentPlayerIndex];
+        let myHouses = [];
 
-        let allHouses = [];
+        myHouses.push({
+            id: "main",
+            name: currentPlayer.name,
+            type: "main",
+            persons: currentPlayer.persons.filter(p => {
+                if (!currentPlayer.vassalHouses) return true;
+                for (let vh of currentPlayer.vassalHouses) {
+                    if (vh.family && vh.family.some(v => v.id === p.id)) return false;
+                }
+                if (currentPlayer.vassalFamily && currentPlayer.vassalFamily.some(v => v.id === p.id)) return false;
+                return true;
+            })
+        });
 
-        for (let player of this.players) {
-            if (player.id !== currentPlayer.id) {
-                allHouses.push({
-                    id: player.id,
-                    name: player.name,
-                    type: "main",
-                    player: player,
-                    persons: player.persons.filter(p => {
-                        if (!player.vassalHouses) return true;
-                        for (let vh of player.vassalHouses) {
-                            if (vh.family.some(v => v.id === p.id)) return false;
-                        }
-                        return true;
-                    })
-                });
-            }
+        if (currentPlayer.vassalFamily && currentPlayer.vassalFamily.length > 0) {
+            myHouses.push({
+                id: "initial_vassal",
+                name: currentPlayer.vassalHouseName || "Вассалы",
+                type: "vassal",
+                persons: currentPlayer.vassalFamily
+            });
         }
 
-        for (let player of this.players) {
-            if (player.id !== currentPlayer.id && player.vassalHouses) {
-                for (let vh of player.vassalHouses) {
-                    allHouses.push({
-                        id: vh.id || `vassal_${player.id}_${vh.houseName}`,
+        if (currentPlayer.vassalHouses) {
+            for (let vh of currentPlayer.vassalHouses) {
+                if (vh.houseName !== currentPlayer.vassalHouseName) {
+                    myHouses.push({
+                        id: vh.id,
                         name: vh.houseName,
                         type: "vassal",
-                        player: player,
-                        persons: vh.family,
-                        parentId: player.id
+                        persons: vh.family
                     });
                 }
             }
         }
 
+        let hasAvailablePersons = false;
+        for (let house of myHouses) {
+            if (house.persons.some(p => !p.spouseId && p.age >= 16 && p.isAlive)) {
+                hasAvailablePersons = true;
+                break;
+            }
+        }
+
+        if (!hasAvailablePersons) {
+            alert("В ваших домах нет доступных для брака кандидатов (старше 16 лет и не в браке)");
+            return;
+        }
+
         let html = `<div class="build-dialog">
-            <h3>🤝 Дипломатия - Дом ${currentPlayer.name}</h3>
-            <p>Выберите дом для взаимодействия:</p>
-            <div id="diploHouses"></div>
-            <button id="closeDiplo">Закрыть</button>
+            <h3>💍 Брак - Шаг 1: Выберите свой дом</h3>
+            <p>Из какого дома будет жених/невеста?</p>
+            <div id="myHousesList"></div>
+            <button id="closeDiplo">Отмена</button>
         </div>`;
         document.getElementById("dynamicContent").innerHTML = html;
 
-        let housesDiv = document.getElementById("diploHouses");
-        for (let house of allHouses) {
-            housesDiv.innerHTML += `<div class="enemy-card" data-house-id="${house.id}" data-house-type="${house.type}" data-player-id="${house.player.id}">
-                <b>🏰 Дом ${house.name}</b> (${house.type === "main" ? "Основной дом" : "Вассальный дом"})
-                <br><button class="propose-marriage" data-house-id="${house.id}" data-house-type="${house.type}" data-player-id="${house.player.id}">💍 Предложить брак</button>
+        let housesDiv = document.getElementById("myHousesList");
+        for (let house of myHouses) {
+            let availableCount = house.persons.filter(p => !p.spouseId && p.age >= 16 && p.isAlive).length;
+            housesDiv.innerHTML += `<div class="enemy-card" data-house-id="${house.id}" data-house-name="${house.name}" data-house-type="${house.type}">
+                <b>🏰 ${house.name}</b> (${house.type === "main" ? "Основной дом" : "Вассальный дом"})<br>
+                👤 Доступно для брака: ${availableCount}
             </div>`;
         }
 
-        document.querySelectorAll(".propose-marriage").forEach(btn => {
-            btn.onclick = (e) => {
-                e.stopPropagation();
-                let houseId = btn.dataset.houseId;
-                let houseType = btn.dataset.houseType;
-                let targetPlayerId = parseInt(btn.dataset.playerId);
-                let targetPlayer = this.players.find(p => p.id === targetPlayerId);
-                let targetHouse = null;
+        document.querySelectorAll("[data-house-id]").forEach(card => {
+            card.onclick = () => {
+                let houseId = card.dataset.houseId;
+                let selectedHouse = myHouses.find(h => h.id == houseId);
+                if (selectedHouse) {
+                    this.selectPersonFromMyHouse(currentPlayer, selectedHouse);
+                }
+            };
+        });
 
+        document.getElementById("closeDiplo").onclick = () => this.updateUI();
+    }
+
+    selectPersonFromMyHouse(currentPlayer, myHouse) {
+        let availablePersons = myHouse.persons.filter(p => !p.spouseId && p.age >= 16 && p.isAlive);
+
+        if (availablePersons.length === 0) {
+            alert(`В доме ${myHouse.name} нет доступных для брака кандидатов`);
+            this.updateUI();
+            return;
+        }
+
+        let html = `<div class="build-dialog">
+            <h3>💍 Брак - Шаг 2: Выберите ${myHouse.type === "main" ? "члена семьи" : "вассала"}</h3>
+            <p>Из дома: <strong>${myHouse.name}</strong></p>
+            <div id="myPersonsList"></div>
+            <button id="backToHouses">Назад</button>
+            <button id="cancelSelection">Отмена</button>
+        </div>`;
+        document.getElementById("dynamicContent").innerHTML = html;
+
+        let personsDiv = document.getElementById("myPersonsList");
+        for (let person of availablePersons) {
+            personsDiv.innerHTML += `<div class="family-member" data-person-id="${person.id}" data-person-name="${person.name}" data-person-gender="${person.gender}" data-person-role="${person.role}">
+                ${person.name} (${person.role}, ${person.age} лет, ${person.gender === "male" ? "Мужчина" : "Женщина"})
+            </div>`;
+        }
+
+        document.querySelectorAll("[data-person-id]").forEach(el => {
+            el.onclick = () => {
+                let sourcePerson = {
+                    id: parseFloat(el.dataset.personId),
+                    name: el.dataset.personName,
+                    gender: el.dataset.personGender,
+                    role: el.dataset.personRole,
+                    houseName: myHouse.name,
+                    houseType: myHouse.type
+                };
+                this.selectTargetHouse(currentPlayer, sourcePerson);
+            };
+        });
+
+        document.getElementById("backToHouses").onclick = () => this.showDiplomacy();
+        document.getElementById("cancelSelection").onclick = () => this.updateUI();
+    }
+
+    selectTargetHouse(currentPlayer, sourcePerson) {
+        let targetHouses = [];
+
+        for (let player of this.players) {
+            if (player.id === currentPlayer.id) continue;
+
+            targetHouses.push({
+                id: player.id,
+                name: player.name,
+                type: "main",
+                player: player,
+                persons: player.persons.filter(p => {
+                    if (!player.vassalHouses) return true;
+                    for (let vh of player.vassalHouses) {
+                        if (vh.family && vh.family.some(v => v.id === p.id)) return false;
+                    }
+                    if (player.vassalFamily && player.vassalFamily.some(v => v.id === p.id)) return false;
+                    return true;
+                })
+            });
+
+            if (player.vassalFamily && player.vassalFamily.length > 0) {
+                targetHouses.push({
+                    id: `vassal_${player.id}_initial`,
+                    name: player.vassalHouseName || "Вассалы",
+                    type: "vassal",
+                    player: player,
+                    persons: player.vassalFamily
+                });
+            }
+
+            if (player.vassalHouses) {
+                for (let vh of player.vassalHouses) {
+                    if (vh.houseName !== player.vassalHouseName) {
+                        targetHouses.push({
+                            id: vh.id,
+                            name: vh.houseName,
+                            type: "vassal",
+                            player: player,
+                            persons: vh.family
+                        });
+                    }
+                }
+            }
+        }
+
+        if (targetHouses.length === 0) {
+            alert("Нет других домов для предложения брака");
+            this.updateUI();
+            return;
+        }
+
+        let html = `<div class="build-dialog">
+            <h3>💍 Брак - Шаг 3: Выберите дом будущего супруга</h3>
+            <p>Ваша персона: <strong>${sourcePerson.name}</strong> (${sourcePerson.role}, ${sourcePerson.gender === "male" ? "Мужчина" : "Женщина"})</p>
+            <div id="targetHousesList"></div>
+            <button id="backToPersons">Назад</button>
+            <button id="cancelSelection">Отмена</button>
+        </div>`;
+        document.getElementById("dynamicContent").innerHTML = html;
+
+        let housesDiv = document.getElementById("targetHousesList");
+        for (let house of targetHouses) {
+            let availableCount = house.persons.filter(p => !p.spouseId && p.age >= 16 && p.isAlive).length;
+            housesDiv.innerHTML += `<div class="enemy-card" data-house-id="${house.id}" data-house-name="${house.name}" data-house-type="${house.type}" data-player-id="${house.player.id}">
+                <b>🏰 ${house.name}</b> (${house.type === "main" ? "Основной дом" : "Вассальный дом"})<br>
+                👤 Доступно для брака: ${availableCount}
+            </div>`;
+        }
+
+        document.querySelectorAll("[data-house-id]").forEach(card => {
+            card.onclick = () => {
+                let houseId = card.dataset.houseId;
+                let houseType = card.dataset.houseType;
+                let targetPlayerId = parseInt(card.dataset.playerId);
+                let targetPlayer = this.players.find(p => p.id === targetPlayerId);
+                let houseName = card.dataset.houseName;
+
+                let targetHouse = null;
                 if (houseType === "main") {
                     targetHouse = {
                         name: targetPlayer.name,
                         persons: targetPlayer.persons.filter(p => {
                             if (!targetPlayer.vassalHouses) return true;
                             for (let vh of targetPlayer.vassalHouses) {
-                                if (vh.family.some(v => v.id === p.id)) return false;
+                                if (vh.family && vh.family.some(v => v.id === p.id)) return false;
                             }
+                            if (targetPlayer.vassalFamily && targetPlayer.vassalFamily.some(v => v.id === p.id)) return false;
                             return true;
                         }),
                         type: "main",
                         player: targetPlayer
                     };
                 } else {
-                    let vh = targetPlayer.vassalHouses?.find(v => v.id === houseId || v.houseName === houseId);
+                    let vh = null;
+                    if (houseId.includes("initial")) {
+                        vh = { family: targetPlayer.vassalFamily, houseName: targetPlayer.vassalHouseName };
+                    } else {
+                        vh = targetPlayer.vassalHouses?.find(v => v.id == houseId || v.houseName === houseName);
+                    }
                     if (vh) {
                         targetHouse = {
                             name: vh.houseName,
@@ -1189,60 +2034,47 @@ class Game {
                 }
 
                 if (targetHouse) {
-                    this.proposeMarriageToHouse(currentPlayer, targetHouse);
+                    this.selectTargetPerson(currentPlayer, sourcePerson, targetHouse);
                 }
             };
         });
 
-        document.getElementById("closeDiplo").onclick = () => this.updateUI();
+        document.getElementById("backToPersons").onclick = () => this.selectPersonFromMyHouse(currentPlayer, { name: sourcePerson.houseName, type: sourcePerson.houseType, persons: [] });
+        document.getElementById("cancelSelection").onclick = () => this.updateUI();
     }
 
-    proposeMarriageToHouse(sourcePlayer, targetHouse) {
-        let sourceUnmarried = sourcePlayer.persons.filter(p => !p.spouseId && p.age >= 16);
-        let targetUnmarried = targetHouse.persons.filter(p => !p.spouseId && p.age >= 16);
+    selectTargetPerson(currentPlayer, sourcePerson, targetHouse) {
+        let availablePersons = targetHouse.persons.filter(p => !p.spouseId && p.age >= 16 && p.isAlive);
 
-        if (sourceUnmarried.length === 0) {
-            alert("В вашем доме нет доступных для брака кандидатов");
-            return;
-        }
-
-        if (targetUnmarried.length === 0) {
+        if (availablePersons.length === 0) {
             alert(`В доме ${targetHouse.name} нет доступных для брака кандидатов`);
+            this.updateUI();
             return;
         }
 
         let html = `<div class="build-dialog">
-            <h3>💍 Предложение брака дому ${targetHouse.name}</h3>
-            <p>Выберите жениха/невесту из вашего дома:</p>`;
-        for (let person of sourceUnmarried) {
-            html += `<div class="family-member" data-source="${person.id}">${person.name} (${person.role}, ${person.age} лет, ${person.gender === "male" ? "Мужчина" : "Женщина"})</div>`;
-        }
-        html += `<button id="cancelProposal">Отмена</button></div>`;
+            <h3>💍 Брак - Шаг 4: Выберите супруга из дома ${targetHouse.name}</h3>
+            <p>Ваша персона: <strong>${sourcePerson.name}</strong> (${sourcePerson.role}, ${sourcePerson.gender === "male" ? "Мужчина" : "Женщина"})</p>
+            <div id="targetPersonsList"></div>
+            <button id="backToTargetHouses">Назад</button>
+            <button id="cancelSelection">Отмена</button>
+        </div>`;
         document.getElementById("dynamicContent").innerHTML = html;
 
-        document.querySelectorAll("[data-source]").forEach(el => {
-            el.onclick = () => {
-                let sourcePersonId = parseFloat(el.dataset.source);
-                let sourcePerson = sourcePlayer.persons.find(p => p.id === sourcePersonId);
-                this.selectTargetPersonForMarriage(sourcePlayer, targetHouse, sourcePerson, targetUnmarried);
-            };
-        });
-        document.getElementById("cancelProposal").onclick = () => this.updateUI();
-    }
-
-    selectTargetPersonForMarriage(sourcePlayer, targetHouse, sourcePerson, targetUnmarried) {
-        let html = `<div class="build-dialog">
-            <h3>💍 Выберите супруга из дома ${targetHouse.name}</h3>`;
-        for (let person of targetUnmarried) {
-            html += `<div class="family-member" data-target="${person.id}">${person.name} (${person.role}, ${person.age} лет, ${person.gender === "male" ? "Мужчина" : "Женщина"})</div>`;
+        let personsDiv = document.getElementById("targetPersonsList");
+        for (let person of availablePersons) {
+            personsDiv.innerHTML += `<div class="family-member" data-person-id="${person.id}" data-person-name="${person.name}" data-person-gender="${person.gender}">
+                ${person.name} (${person.role}, ${person.age} лет, ${person.gender === "male" ? "Мужчина" : "Женщина"})
+            </div>`;
         }
-        html += `<button id="cancelSelect">Отмена</button></div>`;
-        document.getElementById("dynamicContent").innerHTML = html;
 
-        document.querySelectorAll("[data-target]").forEach(el => {
+        document.querySelectorAll("[data-person-id]").forEach(el => {
             el.onclick = () => {
-                let targetPersonId = parseFloat(el.dataset.target);
-                let targetPerson = targetUnmarried.find(p => p.id === targetPersonId);
+                let targetPerson = {
+                    id: parseFloat(el.dataset.personId),
+                    name: el.dataset.personName,
+                    gender: el.dataset.personGender
+                };
 
                 if (sourcePerson.gender === targetPerson.gender) {
                     alert("❌ Брак между однополыми персонами невозможен!");
@@ -1251,25 +2083,32 @@ class Game {
                 }
 
                 this.pendingMarriageProposals.push({
-                    fromPlayerId: sourcePlayer.id,
+                    fromPlayerId: currentPlayer.id,
                     toPlayerId: targetHouse.player.id,
                     toHouseType: targetHouse.type,
                     toHouseName: targetHouse.name,
                     sourcePersonId: sourcePerson.id,
                     sourcePersonName: sourcePerson.name,
+                    sourcePersonHouse: sourcePerson.houseName,
                     targetPersonId: targetPerson.id,
                     targetPersonName: targetPerson.name
                 });
-                this.addChronicle(`💌 Дом ${sourcePlayer.name} предложил брак между ${sourcePerson.name} и ${targetPerson.name} дому ${targetHouse.name}. Ожидайте ответа.`);
+                this.addChronicle(`💌 Дом ${currentPlayer.name} (${sourcePerson.houseName}) предложил брак между ${sourcePerson.name} и ${targetPerson.name} дому ${targetHouse.name}. Ожидайте ответа.`);
                 this.updateUI();
             };
         });
-        document.getElementById("cancelSelect").onclick = () => this.updateUI();
+
+        // В конце метода selectTargetPerson, после push, добавьте:
+        console.log("Предложение отправлено!");
+        console.log("Текущий массив предложений:", this.pendingMarriageProposals);
+
+        document.getElementById("backToTargetHouses").onclick = () => this.selectTargetHouse(currentPlayer, sourcePerson);
+        document.getElementById("cancelSelection").onclick = () => this.updateUI();
     }
 
     showSquireMenu() {
         let currentPlayer = this.players[this.currentPlayerIndex];
-        let eligibleBoys = currentPlayer.persons.filter(p => p.gender === "male" && !p.isSquire && !p.isKnight && p.age >= 12 && p.age < 16);
+        let eligibleBoys = currentPlayer.persons.filter(p => p.gender === "male" && !p.isSquire && !p.isKnight && p.age >= 12 && p.age < 16 && p.isAlive);
 
         if (eligibleBoys.length === 0) {
             alert("Нет мальчиков от 12 до 16 лет, которых можно отдать в оруженосцы");
@@ -1322,6 +2161,8 @@ class Game {
         });
         document.getElementById("cancelLord").onclick = () => this.updateUI();
     }
+
+    // ========== СОЗДАНИЕ ИГРЫ ==========
 
     setupEventListeners() {
         document.getElementById("startGameBtn").onclick = () => this.startGame();
@@ -1422,7 +2263,27 @@ class Game {
 
             this.pendingCityStrength = strength;
             document.getElementById("strengthResult").innerHTML = `<span class="dice-big">Выпало ${dice} → Сила ${strength}</span>`;
-            setTimeout(() => this.createFamily(), 1000);
+            setTimeout(() => this.askCityName(), 800);
+        };
+    }
+
+    askCityName() {
+        let defaultName = `${this.currentCreatingPlayer.name}холд`;
+        let html = `<div class="build-dialog">
+            <h3>🏰 Название столицы</h3>
+            <p>Придумайте название для вашего главного города</p>
+            <input type="text" id="cityNameInput" placeholder="Название города" value="${defaultName}" style="width:90%; padding:10px; margin:10px 0; border-radius:20px;">
+            <button id="confirmCityNameBtn">Подтвердить</button>
+        </div>`;
+        document.getElementById("dynamicContent").innerHTML = html;
+
+        document.getElementById("confirmCityNameBtn").onclick = () => {
+            let cityName = document.getElementById("cityNameInput").value.trim();
+            if (cityName === "") {
+                cityName = defaultName;
+            }
+            this.pendingCityName = cityName;
+            this.createFamily();
         };
     }
 
@@ -1442,7 +2303,10 @@ class Game {
     }
 
     inputFamilyMembers(count) {
-        let html = `<h3>Семья Дома ${this.currentCreatingPlayer.name}</h3>`;
+        let cityName = this.pendingCityName || `${this.currentCreatingPlayer.name}холд`;
+
+        let html = `<h3>Семья Дома ${this.currentCreatingPlayer.name}</h3>
+                <p><small>Город будет называться: <strong>${cityName}</strong></small></p>`;
         for (let i = 0; i < count; i++) {
             let defaultRole = i === 0 ? "Лорд" : this.ROLES[Math.floor(Math.random() * this.ROLES.length)];
             let defaultAge = i === 0 ? 35 : 20 + i * 5;
@@ -1495,6 +2359,7 @@ class Game {
             }
 
             this.currentCreatingPlayer.persons = persons;
+            this.currentCreatingPlayer.lordCityName = cityName;
             this.createVassalFamily();
         };
     }
@@ -1523,10 +2388,14 @@ class Game {
 
     inputVassalFamilyMembers(count) {
         let vassalHouseName = document.getElementById("vassalHouseName").value.trim() || `${this.currentCreatingPlayer.name} Вассалы`;
+        let defaultVassalCityName = `${vassalHouseName} замок`;
+
+        let html = `<h3>Семья вассала ${vassalHouseName}</h3>
+                <p>Название города вассала:</p>
+                <input type="text" id="vassalCityNameInput" placeholder="Название города" value="${defaultVassalCityName}" style="width:90%; padding:8px; margin:10px 0; border-radius:20px;">`;
 
         let vassalRoles = ["Лорд", "Супруга", "Наследник", "Дочь", "Брат", "Сестра", "Рыцарь", "Мейстер", "Оруженосец"];
 
-        let html = `<h3>Семья вассала ${vassalHouseName}</h3>`;
         for (let i = 0; i < count; i++) {
             let defaultRole = i === 0 ? "Лорд" : vassalRoles[Math.floor(Math.random() * vassalRoles.length)];
             let defaultAge = i === 0 ? 35 : 20 + i * 5;
@@ -1570,13 +2439,16 @@ class Game {
             let lordHexObj = this.hexes.find(h => h.row === this.selectedLordHex.row && h.col === this.selectedLordHex.col);
             let vassalHexObj = this.hexes.find(h => h.row === this.selectedVassalHex.row && h.col === this.selectedVassalHex.col);
 
-            let lordCity = new City(Date.now(), lordHexObj.row, lordHexObj.col, this.currentCreatingPlayer.name, this.pendingCityStrength, this.currentCreatingPlayer.id, "normal", null);
+            let lordCityName = this.currentCreatingPlayer.lordCityName || `${this.currentCreatingPlayer.name}холд`;
+            let vassalCityName = document.getElementById("vassalCityNameInput").value.trim() || defaultVassalCityName;
+
+            let lordCity = new City(Date.now(), lordHexObj.row, lordHexObj.col, lordCityName, this.pendingCityStrength, this.currentCreatingPlayer.id, "normal", null);
             lordCity.gold = this.pendingCityStrength;
             lordCity.army = this.pendingCityStrength;
             lordCity.isStartCity = true;
 
             let vassalStrength = Math.max(1, this.pendingCityStrength - 1);
-            let vassalCity = new City(Date.now() + 1, vassalHexObj.row, vassalHexObj.col, vassalHouseName, vassalStrength, this.currentCreatingPlayer.id, "normal", null);
+            let vassalCity = new City(Date.now() + 1, vassalHexObj.row, vassalHexObj.col, vassalCityName, vassalStrength, this.currentCreatingPlayer.id, "normal", null);
             vassalCity.gold = vassalStrength;
             vassalCity.army = vassalStrength;
             vassalCity.isStartCity = true;
@@ -1589,7 +2461,7 @@ class Game {
             let allPersons = [...this.currentCreatingPlayer.persons, ...vassalPersons];
             this.currentCreatingPlayer.persons = allPersons;
 
-            this.addChronicle(`Дом ${this.currentCreatingPlayer.name} создан. Столица: ${lordCity.name} (сила ${this.pendingCityStrength}), Вассал: ${vassalHouseName} (сила ${vassalStrength})`);
+            this.addChronicle(`Дом ${this.currentCreatingPlayer.name} создан. Столица: ${lordCity.name} (сила ${this.pendingCityStrength}), Вассал: ${vassalHouseName} (${vassalCity.name}, сила ${vassalStrength})`);
 
             this.nextPlayerCreation();
         };
@@ -1632,6 +2504,8 @@ class Game {
         for (let i = 0; i < count; i++) {
             this.players.push(new Player(i, playerNames[i]));
         }
+
+        this.closeModal();
 
         document.getElementById("mainMenu").style.display = "none";
         document.getElementById("gameContainer").style.display = "block";
