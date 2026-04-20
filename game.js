@@ -220,6 +220,7 @@ class Game {
             "wwwwpppppppppwppppmmppppppppwwwwwwww",
             "wwwwpppppppppppppmpppmpppppppwwwwwww",
             "wwwwpwpppppppppppppppppppppwppwwwwww",
+            "wwwwwwpppppppppppppppppppppwwwwwwwww",
             "wwwwwwwppwpppppppppppwppppwwwwwwwwww",
             "wwwwwwwwppppfffffppppwwwwwwwwwwwwwww",
             "wwwwwpppppppffffpppwwwwwwwwwwwwwwwww",
@@ -243,12 +244,11 @@ class Game {
             "wwwwwwwpppppppppppmmmmmmpmmfpffpwwww",
             "wwwwwwwppmmpmppppppmmpppmmfpwwwwww",
             "wwwwppppppmmmmmpppppwwwwwwwfpwwwwww",
-            "wwwwwppppppmmmmmmmmmmwwwwwwwwwwwwpww",
+            "wwwwwppppppmmmmmmpmmmwwwwwwwwwwwwpww",
             "wwwwwwwpppppmmpppmmmppppwwwwwpwwwww",
             "wwwwwwppppmmpmpppppppppppppppmmmpwww",
             "wwwwwwwpppwmmmpppppppppppppppppwwwww",
             "wwwwppwwwwwwmppppppppppppppppwwwwwww",
-            "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
             "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww"
         ];
 
