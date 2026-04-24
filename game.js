@@ -1523,7 +1523,6 @@ class Game {
         console.log("=== processBirths для игрока:", player.name);
 
         let allFamilies = [];
-        let totalBirths = 0;
 
         // Основная семья
         allFamilies.push({
@@ -1538,7 +1537,8 @@ class Game {
                 return true;
             }),
             addPerson: (person) => player.persons.push(person),
-            getChildrenCount: () => {
+            getChildrenCount: (couple) => {
+                // Считаем количество детей у конкретной пары
                 let familyPersons = player.persons.filter(p => {
                     if (!player.vassalHouses) return true;
                     for (let vh of player.vassalHouses) {
@@ -1547,7 +1547,10 @@ class Game {
                     if (player.vassalFamily && player.vassalFamily.some(v => v.id === p.id)) return false;
                     return true;
                 });
-                return familyPersons.filter(p => p.role === "Сын" || p.role === "Дочь").length;
+                return familyPersons.filter(p =>
+                    (p.fatherId === couple.father.id || p.motherId === couple.mother.id) &&
+                    (p.role === "Сын" || p.role === "Дочь")
+                ).length;
             }
         });
 
@@ -1561,7 +1564,12 @@ class Game {
                     player.vassalFamily.push(person);
                     player.persons.push(person);
                 },
-                getChildrenCount: () => player.vassalFamily.filter(p => p.role === "Сын" || p.role === "Дочь").length
+                getChildrenCount: (couple) => {
+                    return player.vassalFamily.filter(p =>
+                        (p.fatherId === couple.father.id || p.motherId === couple.mother.id) &&
+                        (p.role === "Сын" || p.role === "Дочь")
+                    ).length;
+                }
             });
         }
 
@@ -1577,15 +1585,18 @@ class Game {
                             vh.family.push(person);
                             player.persons.push(person);
                         },
-                        getChildrenCount: () => vh.family.filter(p => p.role === "Сын" || p.role === "Дочь").length
+                        getChildrenCount: (couple) => {
+                            return vh.family.filter(p =>
+                                (p.fatherId === couple.father.id || p.motherId === couple.mother.id) &&
+                                (p.role === "Сын" || p.role === "Дочь")
+                            ).length;
+                        }
                     });
                 }
             }
         }
 
         for (let family of allFamilies) {
-            let childrenCount = family.getChildrenCount();
-
             // Находим все супружеские пары
             let couples = [];
             let coupleKeys = new Set();
@@ -1603,17 +1614,18 @@ class Game {
                 }
             }
 
-            console.log(`Семья ${family.name}: найдено ${couples.length} пар, детей ${childrenCount}`);
+            console.log(`Семья ${family.name}: найдено ${couples.length} пар`);
 
             for (let couple of couples) {
-                // Увеличиваем базовую вероятность до 50% и снижаем медленнее
+                // Количество детей У ЭТОЙ КОНКРЕТНОЙ ПАРЫ
+                let childrenCount = family.getChildrenCount(couple);
+                // Вероятность: 80% - 15% за каждого ребёнка
                 let chance = 80 - (childrenCount * 15);
-                chance = Math.max(chance, 15);
+                chance = Math.max(chance, 10);
                 let roll = Math.floor(Math.random() * 100) + 1;
                 console.log(`Пара ${couple.mother.name} и ${couple.father.name}: детей ${childrenCount}, шанс ${chance}%, выпало ${roll}%`);
 
                 if (roll <= chance) {
-                    totalBirths++;
                     let gender = Math.random() < 0.5 ? "male" : "female";
                     let role = gender === "male" ? "Сын" : "Дочь";
                     let defaultName = gender === "male" ? "Новорождённый" : "Новорождённая";
@@ -1628,22 +1640,15 @@ class Game {
                         this.addChronicle(`👶 В семье Дома ${family.name} у ${fatherName} и ${motherName} родился ${gender === "male" ? "сын" : "дочь"} ${name}`);
                         this.updateUI();
                     });
-                    childrenCount++;
                 }
-                this.saveToStorage();
             }
         }
 
-        console.log(`Всего рождений в этом ходу: ${totalBirths}`);
-
         // Смерть от старости
-        let deathModifier = Math.floor(this.currentTurn);
-        deathModifier = Math.min(deathModifier, 30);
-
         for (let person of player.persons) {
             if (person.age >= 60 && !person.isRuler && person.isAlive) {
-                let deathChance = 30 + deathModifier;
-                deathChance = Math.min(deathChance, 80);
+                let deathChance = 20 + Math.floor((person.age - 60) / 2);
+                deathChance = Math.min(deathChance, 70);
                 let roll = Math.floor(Math.random() * 100) + 1;
                 if (roll <= deathChance) {
                     person.isAlive = false;
@@ -1652,8 +1657,8 @@ class Game {
                 }
             }
             if (person.age >= 65 && person.isRuler && person.isAlive) {
-                let deathChance = 35 + (person.age - 65) * 10;
-                deathChance = Math.min(deathChance, 95);
+                let deathChance = 30 + Math.floor((person.age - 65) / 2);
+                deathChance = Math.min(deathChance, 85);
                 let roll = Math.floor(Math.random() * 100) + 1;
                 if (roll <= deathChance) {
                     person.isAlive = false;
@@ -1663,7 +1668,6 @@ class Game {
             }
         }
     }
-
     // Добавьте этот метод в класс Game
     processKnighthood(player) {
         for (let person of player.persons) {
@@ -1713,25 +1717,59 @@ class Game {
     }
 
     handleRulerDeath(player, deadRuler) {
-        this.addChronicle(`⚰️ Правитель Дома ${player.name} ${deadRuler.name} умер в возрасте ${deadRuler.age} лет`);
+        // Определяем, из какой семьи был правитель
+        let familyName = "";
+        let familyType = "";
 
-        // Находим наследника
+        // Проверяем основную семью
+        let inMainFamily = player.persons.some(p => p.id === deadRuler.id &&
+            (!player.vassalHouses || !player.vassalHouses.some(vh => vh.family && vh.family.some(v => v.id === deadRuler.id))) &&
+            (!player.vassalFamily || !player.vassalFamily.some(v => v.id === deadRuler.id))
+        );
+
+        if (inMainFamily) {
+            familyName = player.name;
+            familyType = "main";
+        }
+        // Проверяем начального вассала
+        else if (player.vassalFamily && player.vassalFamily.some(p => p.id === deadRuler.id)) {
+            familyName = player.vassalHouseName || "Вассалы";
+            familyType = "initial_vassal";
+        }
+        // Проверяем другие вассальные дома
+        else if (player.vassalHouses) {
+            for (let vh of player.vassalHouses) {
+                if (vh.family && vh.family.some(p => p.id === deadRuler.id)) {
+                    familyName = vh.houseName;
+                    familyType = "vassal";
+                    break;
+                }
+            }
+        }
+
+        this.addChronicle(`⚰️ Правитель ${deadRuler.name} из дома ${familyName} умер в возрасте ${deadRuler.age} лет`);
+
+        // Находим наследника ТОЛЬКО в этом же доме
         let heir = this.findHeir(player, deadRuler);
 
         if (!heir) {
-            this.addChronicle(`⚠️ Дом ${player.name} остался без наследника! Игра окончена для этого дома.`);
-            this.eliminatePlayer(player);
+            // Нет наследников - дом прекращает существование
+            this.eliminateHouse(player, deadRuler, familyName, familyType);
             return;
         }
 
         // Находим города, которыми владел умерший правитель
-        let rulerCities = player.cities.filter(c => c.rulerId === deadRuler.id || c.parentId === deadRuler.id);
+        let rulerCities = player.cities.filter(c => {
+            return c.rulerId === deadRuler.id ||
+                (c.isStartCity && !c.rulerId && c.name === player.name) ||
+                c.parentId === deadRuler.id;
+        });
 
         if (rulerCities.length === 0) {
             heir.isRuler = true;
             heir.isLord = true;
             heir.role = deadRuler.role === "Король" ? "Король" : "Лорд";
-            this.addChronicle(`👑 ${heir.name} стал новым правителем Дома ${player.name}, но не имеет земель`);
+            this.addChronicle(`👑 ${heir.name} стал новым правителем дома ${familyName}, но не имеет земель`);
             return;
         }
 
@@ -1742,7 +1780,9 @@ class Game {
             deadRuler: deadRuler,
             rulerCities: [...rulerCities],
             remainingCities: [...rulerCities],
-            selectedCapital: null
+            selectedCapital: null,
+            familyName: familyName,
+            familyType: familyType
         };
 
         this.showCapitalSelection();
@@ -1941,14 +1981,38 @@ class Game {
     }
 
     finishInheritance() {
-        let { player } = this.pendingInheritance;
+        let { player, familyName, familyType, heir, deadRuler } = this.pendingInheritance;
 
-        // Проверяем, не нужно ли удалить игрока
-        let hasLiving = player.persons.some(p => p.isAlive === true);
-        let hasCities = player.cities.length > 0;
+        // Проверяем, жив ли ещё кто-то в этом доме
+        let hasLivingInFamily = false;
+        let familyPersons = [];
 
-        if (!hasLiving && !hasCities) {
-            this.addChronicle(`⚠️ Дом ${player.name} остался без земель и наследников! Игра окончена.`);
+        if (familyType === "main") {
+            familyPersons = player.persons.filter(p => {
+                if (!player.vassalHouses) return true;
+                for (let vh of player.vassalHouses) {
+                    if (vh.family && vh.family.some(v => v.id === p.id)) return false;
+                }
+                if (player.vassalFamily && player.vassalFamily.some(v => v.id === p.id)) return false;
+                return true;
+            });
+            hasLivingInFamily = familyPersons.some(p => p.isAlive === true);
+        } else if (familyType === "initial_vassal") {
+            familyPersons = player.vassalFamily;
+            hasLivingInFamily = familyPersons.some(p => p.isAlive === true);
+        } else {
+            let vh = player.vassalHouses.find(v => v.houseName === familyName);
+            if (vh) {
+                familyPersons = vh.family;
+                hasLivingInFamily = familyPersons.some(p => p.isAlive === true);
+            }
+        }
+
+        // Если в доме никого не осталось - удаляем дом
+        if (!hasLivingInFamily && familyType !== "main") {
+            this.eliminateHouse(player, deadRuler, familyName, familyType);
+        } else if (!hasLivingInFamily && familyType === "main" && player.cities.length === 0) {
+            // Если основной дом пуст и нет городов - игрок выбывает
             this.eliminatePlayer(player);
         }
 
@@ -1977,6 +2041,96 @@ class Game {
             // Корректируем текущего игрока
             if (this.currentPlayerIndex >= this.players.length) {
                 this.currentPlayerIndex = 0;
+            }
+        }
+
+        this.drawMap();
+        this.updateUI();
+    }
+
+    eliminateHouse(player, deadRuler, familyName, familyType) {
+        this.addChronicle(`⚠️ Дом ${familyName} прекратил своё существование из-за отсутствия наследников!`);
+
+        if (familyType === "main") {
+            // Удаляем все города, принадлежавшие этому дому
+            let citiesToRemove = player.cities.filter(c => c.rulerId === deadRuler.id ||
+                (c.isStartCity && c.name === player.name) ||
+                c.parentId === deadRuler.id);
+
+            for (let city of citiesToRemove) {
+                let index = player.cities.findIndex(c => c.id === city.id);
+                if (index !== -1) {
+                    // Очищаем гекс
+                    let hex = this.hexes.find(h => h.row === city.hexRow && h.col === city.hexCol);
+                    if (hex) {
+                        hex.cityId = null;
+                        hex.hasCity = false;
+                        hex.owner = null;
+                    }
+                    player.cities.splice(index, 1);
+                }
+            }
+
+            // Удаляем всех персонажей основного дома
+            player.persons = player.persons.filter(p => {
+                if (!player.vassalHouses) return true;
+                for (let vh of player.vassalHouses) {
+                    if (vh.family && vh.family.some(v => v.id === p.id)) return false;
+                }
+                if (player.vassalFamily && player.vassalFamily.some(v => v.id === p.id)) return false;
+                return false;
+            });
+
+            // Если у игрока не осталось других домов - игрок выбывает
+            if (player.cities.length === 0 && player.persons.length === 0) {
+                this.eliminatePlayer(player);
+            }
+
+        } else if (familyType === "initial_vassal") {
+            // Удаляем начального вассала
+            let citiesToRemove = player.cities.filter(c => c.name === (player.vassalHouseName || "Вассалы") || c.parentId === deadRuler.id);
+            for (let city of citiesToRemove) {
+                let index = player.cities.findIndex(c => c.id === city.id);
+                if (index !== -1) {
+                    let hex = this.hexes.find(h => h.row === city.hexRow && h.col === city.hexCol);
+                    if (hex) {
+                        hex.cityId = null;
+                        hex.hasCity = false;
+                        hex.owner = null;
+                    }
+                    player.cities.splice(index, 1);
+                }
+            }
+
+            // Удаляем семью вассала
+            player.vassalFamily = [];
+            player.vassalHouseName = null;
+
+        } else {
+            // Удаляем конкретный вассальный дом
+            let vassalIndex = player.vassalHouses.findIndex(vh => vh.houseName === familyName);
+            if (vassalIndex !== -1) {
+                let vh = player.vassalHouses[vassalIndex];
+
+                // Удаляем город вассала
+                let cityIndex = player.cities.findIndex(c => c.id === vh.cityId);
+                if (cityIndex !== -1) {
+                    let hex = this.hexes.find(h => h.row === player.cities[cityIndex].hexRow && h.col === player.cities[cityIndex].hexCol);
+                    if (hex) {
+                        hex.cityId = null;
+                        hex.hasCity = false;
+                        hex.owner = null;
+                    }
+                    player.cities.splice(cityIndex, 1);
+                }
+
+                // Удаляем всех персонажей этого вассала
+                for (let person of vh.family) {
+                    let personIndex = player.persons.findIndex(p => p.id === person.id);
+                    if (personIndex !== -1) player.persons.splice(personIndex, 1);
+                }
+
+                player.vassalHouses.splice(vassalIndex, 1);
             }
         }
 
@@ -2768,51 +2922,83 @@ class Game {
     }
 
     findHeir(player, deadRuler) {
-        // 1. Ищем старшего сына
-        let sons = player.persons.filter(p => p.fatherId === deadRuler.id && p.gender === "male" && p.isAlive === true);
+        // Определяем, из какой семьи был правитель
+        let rulerFamilyPersons = [];
+        let familyName = "";
+
+        // Проверяем основную семью
+        let inMainFamily = player.persons.some(p => p.id === deadRuler.id &&
+            (!player.vassalHouses || !player.vassalHouses.some(vh => vh.family && vh.family.some(v => v.id === deadRuler.id))) &&
+            (!player.vassalFamily || !player.vassalFamily.some(v => v.id === deadRuler.id))
+        );
+
+        if (inMainFamily) {
+            familyName = player.name;
+            rulerFamilyPersons = player.persons.filter(p => {
+                if (!player.vassalHouses) return true;
+                for (let vh of player.vassalHouses) {
+                    if (vh.family && vh.family.some(v => v.id === p.id)) return false;
+                }
+                if (player.vassalFamily && player.vassalFamily.some(v => v.id === p.id)) return false;
+                return true;
+            });
+        }
+        // Проверяем начального вассала
+        else if (player.vassalFamily && player.vassalFamily.some(p => p.id === deadRuler.id)) {
+            familyName = player.vassalHouseName || "Вассалы";
+            rulerFamilyPersons = player.vassalFamily;
+        }
+        // Проверяем другие вассальные дома
+        else if (player.vassalHouses) {
+            for (let vh of player.vassalHouses) {
+                if (vh.family && vh.family.some(p => p.id === deadRuler.id)) {
+                    familyName = vh.houseName;
+                    rulerFamilyPersons = vh.family;
+                    break;
+                }
+            }
+        }
+
+        if (rulerFamilyPersons.length === 0) return null;
+
+        // 1. Старший сын
+        let sons = rulerFamilyPersons.filter(p => p.fatherId === deadRuler.id && p.gender === "male" && p.isAlive === true);
         sons.sort((a, b) => a.age - b.age);
         if (sons.length > 0) {
+            console.log(`Наследник (сын): ${sons[0].name} из дома ${familyName}`);
             return sons[0];
         }
 
-        // 2. Ищем брата
-        let brothers = player.persons.filter(p => p.fatherId === deadRuler.fatherId && p.gender === "male" && p.isAlive === true && p.id !== deadRuler.id);
+        // 2. Братья (по старшинству)
+        let brothers = rulerFamilyPersons.filter(p => p.fatherId === deadRuler.fatherId && p.gender === "male" && p.isAlive === true && p.id !== deadRuler.id);
         brothers.sort((a, b) => a.age - b.age);
         if (brothers.length > 0) {
-            this.addChronicle(`⚠️ Прямых наследников нет. Новым правителем становится брат ${brothers[0].name}`);
+            this.addChronicle(`⚠️ В доме ${familyName} нет прямых наследников. Новым правителем становится брат ${brothers[0].name}`);
             return brothers[0];
         }
 
-        // 3. Ищем старшую дочь
-        let daughters = player.persons.filter(p => p.fatherId === deadRuler.id && p.gender === "female" && p.isAlive === true);
-        daughters.sort((a, b) => a.age - b.age);
-        if (daughters.length > 0) {
-            let heiress = daughters[0];
-            this.addChronicle(`⚠️ Наследницей Дома ${player.name} стала дочь ${heiress.name}`);
-            return heiress;
-        }
-
-        // 4. Ищем супругу
-        let spouse = player.persons.find(p => p.spouseId === deadRuler.id && p.isAlive === true);
+        // 3. Супруга
+        let spouse = rulerFamilyPersons.find(p => p.spouseId === deadRuler.id && p.isAlive === true);
         if (spouse) {
-            this.addChronicle(`⚠️ Наследницей Дома ${player.name} стала вдова ${spouse.name}`);
+            this.addChronicle(`⚠️ В доме ${familyName} правителем становится вдова ${spouse.name}`);
             return spouse;
         }
 
-        // 5. Ищем любого мужчину по крови
-        let maleRelatives = player.persons.filter(p => p.gender === "male" && p.isAlive === true && p.id !== deadRuler.id);
-        maleRelatives.sort((a, b) => a.age - b.age);
-        if (maleRelatives.length > 0) {
-            this.addChronicle(`⚠️ Прямых наследников нет. Новым правителем становится ${maleRelatives[0].name} из боковой ветви`);
-            return maleRelatives[0];
+        // 4. Старшая дочь
+        let daughters = rulerFamilyPersons.filter(p => p.fatherId === deadRuler.id && p.gender === "female" && p.isAlive === true);
+        daughters.sort((a, b) => a.age - b.age);
+        if (daughters.length > 0) {
+            let heiress = daughters[0];
+            this.addChronicle(`⚠️ В доме ${familyName} наследницей становится дочь ${heiress.name}`);
+            return heiress;
         }
 
-        // 6. Любая старшая женщина
-        let femaleRelatives = player.persons.filter(p => p.gender === "female" && p.isAlive === true && p.id !== deadRuler.id);
-        femaleRelatives.sort((a, b) => a.age - b.age);
-        if (femaleRelatives.length > 0) {
-            let heiress = femaleRelatives[0];
-            this.addChronicle(`⚠️ Наследницей Дома ${player.name} стала ${heiress.name}. Род ${player.name} прервётся.`);
+        // 5. Сёстры (по старшинству)
+        let sisters = rulerFamilyPersons.filter(p => p.fatherId === deadRuler.fatherId && p.gender === "female" && p.isAlive === true && p.id !== deadRuler.id);
+        sisters.sort((a, b) => a.age - b.age);
+        if (sisters.length > 0) {
+            let heiress = sisters[0];
+            this.addChronicle(`⚠️ В доме ${familyName} наследницей становится сестра ${heiress.name}`);
             return heiress;
         }
 
@@ -3031,7 +3217,7 @@ class Game {
     selectOwnPersonForMarriage() {
         let currentPlayer = this.players[this.currentPlayerIndex];
 
-        // Собираем ВСЕ свои дома (уникальные, без дублирования)
+        // Собираем ВСЕ свои дома (уникальные)
         let myHouses = [];
         let houseNames = new Set();
 
@@ -3050,7 +3236,7 @@ class Game {
                 id: "main",
                 name: currentPlayer.name,
                 type: "main",
-                persons: mainFamilyPersons
+                persons: [...mainFamilyPersons]
             });
             houseNames.add(currentPlayer.name);
         }
@@ -3063,7 +3249,7 @@ class Game {
                     id: "initial_vassal",
                     name: currentPlayer.vassalHouseName || "Вассалы",
                     type: "vassal",
-                    persons: vassalPersons
+                    persons: [...vassalPersons]
                 });
                 houseNames.add(currentPlayer.vassalHouseName || "Вассалы");
             }
@@ -3079,7 +3265,7 @@ class Game {
                             id: vh.id,
                             name: vh.houseName,
                             type: "vassal",
-                            persons: vassalPersons
+                            persons: [...vassalPersons]
                         });
                         houseNames.add(vh.houseName);
                     }
