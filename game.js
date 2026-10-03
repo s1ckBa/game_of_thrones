@@ -12,7 +12,6 @@ class Person {
         this.isSquire = false;
         this.isKnight = false;
         this.squireYears = 0;
-        this.knightChance = 30;
         this.isMarried = false;
         this.isAlive = true;
         this.isLord = false;
@@ -21,9 +20,28 @@ class Person {
         this.rulingCityId = null;
         this.servingTo = null;      // кому служит (название дома)
         this.servingToId = null;    // ID дома/игрока, которому служит
-        this.previousServingTo = null;  // Добавлено: где служил ранее
-        this.wasSquire = false;          // Добавлено: был ли оруженосцем
-        this.wasKnight = false;          // Добавлено: был ли рыцарем
+        this.isPrisoner = false;
+        this.prisonerByPlayerId = null;
+        this.prisonerAtCityId = null;
+        this.isWounded = false;
+    }
+}
+
+class Army {
+    constructor(id, playerId, originCityId, commanderId, hexRow, hexCol, strength) {
+        this.id = id;
+        this.playerId = playerId;
+        this.originCityId = originCityId;
+        this.commanderId = commanderId;
+        this.hexRow = hexRow;
+        this.hexCol = hexCol;
+        this.strength = strength;
+        this.movedThisTurn = false;
+        this.movementLeft = 15;
+        this.status = "marching";
+        this.isCamp = false;
+        this.supplyYears = 0;
+        this.lastCampTurn = null;
     }
 }
 
@@ -89,6 +107,10 @@ class Game {
         this.pendingSquireProposals = [];
         this.pendingCityName = null;
         this.pendingInheritance = null;
+        this.armies = [];
+        this.activeArmyId = null;
+        this.nextArmyId = 1;
+        this.battleState = null;
 
         this.HEX_W = 20;
         this.HEX_R = 12;
@@ -373,6 +395,10 @@ class Game {
             selectedVassalHex: this.selectedVassalHex ? { row: this.selectedVassalHex.row, col: this.selectedVassalHex.col } : null,
             pendingCityStrength: this.pendingCityStrength,
             pendingCityName: this.pendingCityName,
+            armies: this.armies,
+            activeArmyId: this.activeArmyId,
+            nextArmyId: this.nextArmyId,
+            battleState: this.battleState,
             currentCreatingPlayerId: this.currentCreatingPlayer ? this.currentCreatingPlayer.id : null,
             lordCityName: this.currentCreatingPlayer ? this.currentCreatingPlayer.lordCityName : null
         };
@@ -401,6 +427,13 @@ class Game {
                     player.lordCityName = p.lordCityName || data.lordCityName;
                     return player;
                 });
+
+                this.armies = (data.armies || []).map(a => Object.assign(new Army(
+                    a.id, a.playerId, a.originCityId, a.commanderId, a.hexRow, a.hexCol, a.strength
+                ), a));
+                this.activeArmyId = data.activeArmyId || null;
+                this.nextArmyId = data.nextArmyId || (this.armies.reduce((m, a) => Math.max(m, Number(a.id) || 0), 0) + 1);
+                this.battleState = data.battleState || null;
 
                 // Восстанавливаем гексы
                 if (data.hexes) {
@@ -439,7 +472,8 @@ class Game {
                 if (this.gameStarted) {
                     document.getElementById("mainMenu").style.display = "none";
                     document.getElementById("gameContainer").style.display = "block";
-                    this.updateUI();
+                    if (this.battleState) this.showBattleMenu();
+                    else this.updateUI();
                     this.drawMap();
                     console.log("Игра загружена из сохранения, ход:", this.currentTurn);
                 } else if (this.creationPhase && this.currentCreatingPlayer) {
@@ -486,6 +520,10 @@ class Game {
             this.currentPlayerIndex = 0;
             this.pendingMarriageProposals = [];
             this.pendingSquireProposals = [];
+            this.armies = [];
+            this.activeArmyId = null;
+            this.nextArmyId = 1;
+            this.battleState = null;
             this.pendingBuildData = null;
             this.selectLocationMode = false;
             this.pendingCityStrength = null;
@@ -662,6 +700,32 @@ class Game {
                 }
             }
 
+            let armiesHere = this.armies.filter(a => a.hexRow === h.row && a.hexCol === h.col && a.status === "marching");
+            if (armiesHere.length > 0) {
+                let army = armiesHere[0];
+                ctx.fillStyle = "#f2d36b";
+                ctx.beginPath();
+                ctx.arc(h.x + 7, h.y - 7, 6, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.strokeStyle = "#3a2414";
+                ctx.stroke();
+                ctx.fillStyle = "#3a2414";
+                ctx.font = "bold 9px Arial";
+                ctx.fillText(String(army.strength), h.x + 4, h.y - 4);
+                ctx.font = "10px Arial";
+                ctx.fillText("⚔", h.x - 6, h.y + 9);
+            }
+
+            if (this.activeArmyId) {
+                let activeArmy = this.armies.find(a => a.id === this.activeArmyId);
+                if (activeArmy && activeArmy.hexRow === h.row && activeArmy.hexCol === h.col) {
+                    ctx.strokeStyle = "#fff2a8";
+                    ctx.lineWidth = 3;
+                    ctx.strokeRect(h.x - this.HEX_R + 1, h.y - this.HEX_R + 1, this.HEX_R * 2 - 2, this.HEX_R * 2 - 2);
+                    ctx.lineWidth = 1;
+                }
+            }
+
             if (city) {
                 let fontSize = 11;
                 ctx.font = `bold ${fontSize}px consolas`;
@@ -709,7 +773,8 @@ class Game {
         </div>`;
         }
 
-        html += `<div style="font-size:12px; margin-bottom:10px;">💰 Золото: ${currentPlayer.cities.reduce((s, c) => s + c.gold, 0)} | ⚔️ Армия: ${currentPlayer.cities.reduce((s, c) => s + c.army, 0)}</div>`;
+        let fieldArmy = this.armies.filter(a => a.playerId === currentPlayer.id && a.status === "marching").reduce((s, a) => s + a.strength, 0);
+        html += `<div style="font-size:12px; margin-bottom:10px;">💰 Золото: ${currentPlayer.cities.reduce((s, c) => s + c.gold, 0)} | ⚔️ Гарнизоны: ${currentPlayer.cities.reduce((s, c) => s + c.army, 0)} | 🛡️ В походе: ${fieldArmy}</div>`;
 
         for (let city of currentPlayer.cities) {
             let cityClass = "";
@@ -766,8 +831,15 @@ class Game {
         for (let person of lordFamily) {
             let status = "";
             if (person.isMarried) status += ` 💍 Супруг(а): ${person.spouseName || "неизвестен"}`;
-            if (person.isSquire && !person.isKnight) status += " ⚔️ Оруженосец";
-            if (person.isKnight) status += " 🛡️ Рыцарь";
+            if (person.isSquire && !person.isKnight) {
+                status += " ⚔️ Оруженосец";
+            }
+            if (person.isKnight) {
+                status += " 🛡️ Рыцарь";
+                if (person.servingTo) {
+                    status += ` (служит ${person.servingTo})`;
+                }
+            }
             if (!person.isAlive) status += " 💀 Умер";
             html += `<div class="family-member" data-person="${person.id}">${person.name} (${person.role}, ${person.age} лет, ${person.gender === "male" ? "М" : "Ж"})${status}</div>`;
         }
@@ -780,8 +852,15 @@ class Game {
                 for (let person of vassalFamily) {
                     let status = "";
                     if (person.isMarried) status += ` 💍 Супруг(а): ${person.spouseName || "неизвестен"}`;
-                    if (person.isSquire && !person.isKnight) status += " ⚔️ Оруженосец";
-                    if (person.isKnight) status += " 🛡️ Рыцарь";
+                    if (person.isSquire && !person.isKnight) {
+                        status += " ⚔️ Оруженосец";
+                    }
+                    if (person.isKnight) {
+                        status += " 🛡️ Рыцарь";
+                        if (person.servingTo) {
+                            status += ` (служит ${person.servingTo})`;
+                        }
+                    }
                     if (!person.isAlive) status += " 💀 Умер";
                     html += `<div class="family-member" data-person="${person.id}">${person.name} (${person.role}, ${person.age} лет, ${person.gender === "male" ? "М" : "Ж"})${status}</div>`;
                 }
@@ -798,8 +877,15 @@ class Game {
                     for (let person of vassalFamily) {
                         let status = "";
                         if (person.isMarried) status += ` 💍 Супруг(а): ${person.spouseName || "неизвестен"}`;
-                        if (person.isSquire && !person.isKnight) status += " ⚔️ Оруженосец";
-                        if (person.isKnight) status += " 🛡️ Рыцарь";
+                        if (person.isSquire && !person.isKnight) {
+                            status += " ⚔️ Оруженосец";
+                        }
+                        if (person.isKnight) {
+                            status += " 🛡️ Рыцарь";
+                            if (person.servingTo) {
+                                status += ` (служит ${person.servingTo})`;
+                            }
+                        }
                         if (!person.isAlive) status += " 💀 Умер";
                         html += `<div class="family-member" data-person="${person.id}">${person.name} (${person.role}, ${person.age} лет, ${person.gender === "male" ? "М" : "Ж"})${status}</div>`;
                     }
@@ -850,11 +936,19 @@ class Game {
         <p>Пол: ${person.gender === "male" ? "Мужской" : "Женский"}</p>
         <p>Супруг(а): ${person.spouseName || "нет"}</p>`;
 
-        // Простой статус
-        if (person.isSquire && !person.isKnight) {
-            html += `<p>Статус: ⚔️ Оруженосец</p>`;
-        } else if (person.isKnight) {
-            html += `<p>Статус: 🛡️ Рыцарь</p>`;
+        // Отображение статуса
+        if (person.isKnight) {
+            html += `<p>Статус: 🛡️ Рыцарь`;
+            if (person.servingTo) {
+                html += ` (служит дому ${person.servingTo})`;
+            }
+            html += `</p>`;
+        } else if (person.isSquire) {
+            html += `<p>Статус: ⚔️ Оруженосец`;
+            if (person.servingTo) {
+                html += ` (служит дому ${person.servingTo})`;
+            }
+            html += `</p>`;
         } else {
             html += `<p>Статус: Обычный</p>`;
         }
@@ -865,8 +959,8 @@ class Game {
         if (isOwnPerson && person.isSquire && !person.isKnight) {
             html += `<button id="dismissSquireBtn" style="background:#8a4a3a;">❌ Снять с должности оруженосца</button>`;
         }
-        if (isOwnPerson && person.isKnight) {
-            html += `<button id="dismissKnightBtn" style="background:#8a4a3a;">❌ Лишить рыцарства</button>`;
+        if (isOwnPerson && person.isKnight && person.servingTo) {
+            html += `<button id="dismissKnightServiceBtn" style="background:#8a4a3a;">❌ Снять с должности рыцаря (титул сохранится)</button>`;
         }
 
         html += `<button id="closePersonInfo">Закрыть</button>
@@ -877,14 +971,18 @@ class Game {
             document.getElementById("dismissSquireBtn").onclick = () => {
                 person.isSquire = false;
                 person.squireYears = 0;
+                person.servingTo = null;
+                person.servingToId = null;
                 this.addChronicle(`${person.name} больше не является оруженосцем`);
                 this.updateUI();
             };
         }
-        if (isOwnPerson && person.isKnight) {
-            document.getElementById("dismissKnightBtn").onclick = () => {
-                person.isKnight = false;
-                this.addChronicle(`${person.name} лишён рыцарства`);
+        if (isOwnPerson && person.isKnight && person.servingTo) {
+            document.getElementById("dismissKnightServiceBtn").onclick = () => {
+                // Титул рыцаря остаётся, но служба прекращается
+                person.servingTo = null;
+                person.servingToId = null;
+                this.addChronicle(`${person.name} больше не служит, но остаётся рыцарем`);
                 this.updateUI();
             };
         }
@@ -900,6 +998,7 @@ class Game {
             <button id="buildVassalBtn">⚔️ Построить новый вассальный город</button>
             <button id="upgradeCityBtn">⬆️ Улучшить город</button>
             <button id="assignGovernorBtn">👤 Назначить управляющего</button>
+            <button id="marchArmyBtn">🛡️ Отправить армию в поход</button>
             <button id="actionBtn">⚔️ Совершить действие</button>
             <button id="closeCityMenu">❌ Закрыть</button>
         </div>`;
@@ -910,8 +1009,489 @@ class Game {
         document.getElementById("buildVassalBtn").onclick = () => this.showBuildOptions(city, "vassal");
         document.getElementById("upgradeCityBtn").onclick = () => this.upgradeCity(city);
         document.getElementById("assignGovernorBtn").onclick = () => this.showAssignGovernor(city);
+        document.getElementById("marchArmyBtn").onclick = () => this.showMarchMenu(city);
         document.getElementById("actionBtn").onclick = () => this.showActionMenu(city);
         document.getElementById("closeCityMenu").onclick = () => this.updateUI();
+    }
+
+    getPersonById(playerId, personId) {
+        let player = this.players.find(p => p.id === playerId);
+        return player ? player.persons.find(p => p.id === personId) : null;
+    }
+
+    getArmyById(id) {
+        return this.armies.find(a => a.id === id) || null;
+    }
+
+    getHexDistance(a, b) {
+        // Offset-grid approximation used by the existing hex renderer.
+        return Math.max(Math.abs(a.row - b.row), Math.abs(a.col - b.col), Math.abs((a.row - b.row) - (a.col - b.col)));
+    }
+
+    getAdjacentHexes(hex) {
+        const even = hex.row % 2 === 0;
+        const deltas = even
+            ? [[0,-1],[0,1],[-1,-1],[-1,0],[1,-1],[1,0]]
+            : [[0,-1],[0,1],[-1,0],[-1,1],[1,0],[1,1]];
+        return deltas.map(([dr, dc]) => this.hexes.find(h => h.row === hex.row + dr && h.col === hex.col + dc)).filter(Boolean);
+    }
+
+    showMarchMenu(city) {
+        let currentPlayer = this.players[this.currentPlayerIndex];
+        if (city.playerId !== currentPlayer.id) return;
+        if (city.army <= 0) {
+            alert("В городе нет гарнизона для похода.");
+            return;
+        }
+
+        let commanders = currentPlayer.persons.filter(p =>
+            p.isAlive && p.age >= 18 && (p.isLord || p.isRuler || p.role === "Лорд" || p.role === "Король")
+        );
+        if (commanders.length === 0) {
+            alert("Для похода нужен живой командующий старше 18 лет.");
+            return;
+        }
+
+        let options = commanders.map(p => `<option value="${p.id}">${p.name} (${p.role}, ${p.age} лет${p.isKnight ? ", рыцарь +1 в личном бою" : ""})</option>`).join("");
+        let html = `<div class="build-dialog">
+            <h3>🛡️ Поход из города ${city.name}</h3>
+            <p>Гарнизон: <strong>${city.army}/${city.strength}</strong></p>
+            <label>Сколько воинов вывести:</label><br>
+            <input id="marchArmyStrength" type="number" min="1" max="${city.army}" value="${city.army}" style="width:80px; padding:7px; margin:8px;">
+            <p>Главнокомандующий:</p>
+            <select id="marchCommander" style="padding:7px; width:90%;">${options}</select>
+            <br><br><button id="confirmMarchBtn">⚔️ Начать поход</button>
+            <button id="cancelMarchBtn">Отмена</button>
+        </div>`;
+        document.getElementById("dynamicContent").innerHTML = html;
+
+        document.getElementById("confirmMarchBtn").onclick = () => {
+            let strength = parseInt(document.getElementById("marchArmyStrength").value);
+            let commanderId = parseFloat(document.getElementById("marchCommander").value);
+            let commander = currentPlayer.persons.find(p => p.id === commanderId);
+            if (!Number.isInteger(strength) || strength < 1 || strength > city.army) {
+                alert("Укажите корректное количество войск.");
+                return;
+            }
+            if (!commander || !commander.isAlive || commander.age < 18) {
+                alert("Командующий должен быть жив и старше 18 лет.");
+                return;
+            }
+
+            city.army -= strength;
+            let hex = this.hexes.find(h => h.row === city.hexRow && h.col === city.hexCol);
+            let army = new Army(this.nextArmyId++, currentPlayer.id, city.id, commander.id, hex.row, hex.col, strength);
+            this.armies.push(army);
+            this.activeArmyId = army.id;
+            this.addChronicle(`⚔️ ${commander.name} вывел ${strength} войск из города ${city.name} Дома ${currentPlayer.name}`);
+            this.dynamicArmyMessage();
+        };
+        document.getElementById("cancelMarchBtn").onclick = () => this.updateUI();
+    }
+
+    dynamicArmyMessage() {
+        let army = this.getArmyById(this.activeArmyId);
+        if (!army) {
+            this.activeArmyId = null;
+            this.updateUI();
+            return;
+        }
+        let player = this.players.find(p => p.id === army.playerId);
+        let commander = this.getPersonById(army.playerId, army.commanderId);
+        document.getElementById("dynamicContent").innerHTML = `<div class="build-dialog">
+            <h3>⚔️ Походная армия</h3>
+            <p>Дом: <strong>${player.name}</strong></p>
+            <p>Командующий: <strong>${commander ? commander.name : "неизвестен"}</strong></p>
+            <p>Сила армии: <strong>${army.strength}</strong></p>
+            <p>${army.isCamp ? `⛺ Лагерь. Припасов осталось: <strong>${army.supplyYears} лет</strong>.` : `🚶 Осталось перемещений в этом ходу: <strong>${army.movementLeft}/15</strong>.`}</p>
+            <p>${army.isCamp ? "Лагерь можно снять в следующий или любой последующий ход." : "Кликните по соседнему гексу, чтобы переместить армию."}</p>
+            <p>При входе в город противника будет предложено объявить войну.</p>
+            ${army.isCamp ? `<button id="assembleCampBtn">⛺ Собрать лагерь</button>` : `<button id="makeCampBtn">⛺ Разбить лагерь</button>`}
+            <button id="returnArmyBtn">↩️ Расформировать поход и вернуть войска</button>
+            <button id="closeArmyBtn">Закрыть</button>
+        </div>`;
+        document.getElementById("returnArmyBtn").onclick = () => this.returnActiveArmy();
+        if (army.isCamp) document.getElementById("assembleCampBtn").onclick = () => this.assembleCamp(army);
+        else document.getElementById("makeCampBtn").onclick = () => this.setArmyCamp(army);
+        document.getElementById("closeArmyBtn").onclick = () => this.updateUI();
+        this.drawMap();
+        this.saveToStorage();
+    }
+
+    returnActiveArmy() {
+        let army = this.getArmyById(this.activeArmyId);
+        if (!army) return;
+        let city = this.players.flatMap(p => p.cities).find(c => c.id === army.originCityId && c.playerId === army.playerId);
+        if (!city) {
+            alert("Исходный город больше недоступен.");
+            return;
+        }
+        city.army = Math.min(city.strength, city.army + army.strength);
+        let commander = this.getPersonById(army.playerId, army.commanderId);
+        this.addChronicle(`↩️ ${commander ? commander.name : "Командующий"} вернул ${army.strength} войск в ${city.name}`);
+        this.armies = this.armies.filter(a => a.id !== army.id);
+        this.activeArmyId = null;
+        this.updateUI();
+        this.drawMap();
+    }
+
+    async declareWarAndAttack(army, city) {
+        let attacker = this.players.find(p => p.id === army.playerId);
+        let defender = this.players.find(p => p.id === city.playerId);
+        if (!attacker || !defender) return;
+
+        let accepted = await this.showConfirmModal(
+            "⚔️ Объявление войны",
+            `Дом ${attacker.name} объявляет войну Дому ${defender.name} и начинает нападение на город ${city.name}. Продолжить?`,
+            null,
+            null
+        );
+        if (!accepted) {
+            this.addChronicle(`🕊️ Дом ${attacker.name} отказался от нападения на ${city.name}.`);
+            this.activeArmyId = army.id;
+            this.dynamicArmyMessage();
+            return;
+        }
+        this.addChronicle(`⚔️ Дом ${attacker.name} объявил войну Дому ${defender.name}. Началась битва за ${city.name}.`);
+        if (city.army <= 0) this.captureCity(city, army);
+        else this.startBattle(army, city);
+    }
+
+    setArmyCamp(army) {
+        if (!army || army.status !== "marching") return;
+        let dice = Math.floor(Math.random() * 6) + 1;
+        army.isCamp = true;
+        army.status = "camp";
+        army.supplyYears = dice;
+        army.lastCampTurn = this.currentTurn;
+        army.movementLeft = 0;
+        this.addChronicle(`⛺ Армия ${this.getPersonById(army.playerId, army.commanderId)?.name || "командующего"} разбила лагерь. Припасов хватит на ${dice} ${dice === 1 ? "год" : "лет"}.`);
+        this.dynamicArmyMessage();
+    }
+
+    assembleCamp(army) {
+        if (!army || !army.isCamp) return;
+        army.isCamp = false;
+        army.status = "marching";
+        army.movementLeft = 15;
+        army.lastCampTurn = null;
+        this.addChronicle(`⛺ Армия ${this.getPersonById(army.playerId, army.commanderId)?.name || "командующего"} сняла лагерь и продолжила поход.`);
+        this.dynamicArmyMessage();
+    }
+
+    handleCommanderDefeat() {
+        let b = this.battleState;
+        if (!b) return;
+        let army = this.getArmyById(b.armyId);
+        if (!army) return;
+        let commander = this.getPersonById(army.playerId, army.commanderId);
+        if (!commander) return;
+
+        let html = `<div class="build-dialog">
+            <h3>⚔️ Армия разбита</h3>
+            <p>Вся армия уничтожена. Судьба ${commander.name} теперь в ваших руках.</p>
+            <button id="commanderEscapeBtn">🏃 Уйти с поля боя</button>
+            <button id="commanderSurrenderBtn">🏳️ Сдаться</button>
+            <button id="commanderFightBtn">⚔️ Сражаться самому</button>
+        </div>`;
+        document.getElementById("dynamicContent").innerHTML = html;
+        document.getElementById("commanderEscapeBtn").onclick = () => {
+            this.addChronicle(`🏃 ${commander.name} ушёл с поля боя после разгрома армии.`);
+            this.battleState = null;
+            this.armies = this.armies.filter(a => a.id !== army.id);
+            this.activeArmyId = null;
+            this.updateUI(); this.drawMap(); this.saveToStorage();
+        };
+        document.getElementById("commanderSurrenderBtn").onclick = () => {
+            let defender = this.players.flatMap(p => p.cities).find(c => c.id === b.cityId);
+            let captor = defender ? this.players.find(p => p.id === defender.playerId) : null;
+            commander.isPrisoner = true;
+            commander.prisonerByPlayerId = captor ? captor.id : null;
+            commander.prisonerAtCityId = b.cityId;
+            this.addChronicle(`🏳️ ${commander.name} сдался и попал в плен к Дому ${captor ? captor.name : "защитника"}.`);
+            this.battleState = null;
+            this.armies = this.armies.filter(a => a.id !== army.id);
+            this.activeArmyId = null;
+            this.updateUI(); this.drawMap(); this.saveToStorage();
+        };
+        document.getElementById("commanderFightBtn").onclick = () => {
+            b.personalCombat = true;
+            b.commanderHealth = 1;
+            b.commanderDamage = 0.5;
+            b.attackerWins = 0;
+            b.personalTarget = Math.max(1, (this.players.flatMap(p => p.cities).find(c => c.id === b.cityId)?.army || 0) + 2);
+            this.showBattleMenu();
+        };
+    }
+
+    startSurvivalRoll() {
+        let b = this.battleState;
+        if (!b) return;
+        let commander = this.getPersonById(this.getArmyById(b.armyId)?.playerId, this.getArmyById(b.armyId)?.commanderId);
+        if (!commander) return;
+        let first = Math.floor(Math.random() * 6) + 1;
+        b.survivalFirstRoll = first;
+        b.survivalBadCount = Math.min(6, Math.max(1, Math.ceil(first / 2)));
+        b.survivalBadNumbers = [];
+        this.showSurvivalChoice();
+    }
+
+    showSurvivalChoice() {
+        let b = this.battleState;
+        let army = this.getArmyById(b.armyId);
+        let commander = army ? this.getPersonById(army.playerId, army.commanderId) : null;
+        if (!b || !commander) return;
+        let buttons = Array.from({length:6}, (_,i) => `<button class="survival-number" data-number="${i+1}">${i+1}</button>`).join(" ");
+        let html = `<div class="build-dialog">
+            <h3>🎲 Проверка выживания</h3>
+            <p>Первый бросок: <strong>${b.survivalFirstRoll}</strong>.</p>
+            <p>Выберите ${b.survivalBadCount} числа, которые означают смертельный исход.</p>
+            <div id="survivalNumbers">${buttons}</div>
+            <button id="confirmSurvivalNumbers" disabled>🎲 Бросить второй кубик</button>
+        </div>`;
+        document.getElementById("dynamicContent").innerHTML = html;
+        let selected = [];
+        document.querySelectorAll(".survival-number").forEach(btn => btn.onclick = () => {
+            let n = Number(btn.dataset.number);
+            if (selected.includes(n)) {
+                selected = selected.filter(x => x !== n); btn.style.opacity = "1";
+            } else if (selected.length < b.survivalBadCount) {
+                selected.push(n); btn.style.opacity = "0.55";
+            }
+            let confirm = document.getElementById("confirmSurvivalNumbers");
+            confirm.disabled = selected.length !== b.survivalBadCount;
+        });
+        document.getElementById("confirmSurvivalNumbers").onclick = () => {
+            b.survivalBadNumbers = selected;
+            let roll = Math.floor(Math.random() * 6) + 1;
+            if (selected.includes(roll)) {
+                commander.isAlive = false;
+                commander.isWounded = false;
+                this.addChronicle(`💀 ${commander.name} погиб в битве. Второй бросок: ${roll}.`);
+                this.showDeathNotice(commander, () => {
+                    this.battleState = null;
+                    this.armies = this.armies.filter(a => a.id !== b.armyId);
+                    this.activeArmyId = null;
+                    this.checkSuccession(this.players.find(p => p.id === army.playerId));
+                    this.updateUI(); this.drawMap(); this.saveToStorage();
+                });
+            } else {
+                commander.isWounded = true;
+                commander.isPrisoner = true;
+                let city = this.players.flatMap(p => p.cities).find(c => c.id === b.cityId);
+                commander.prisonerByPlayerId = city ? city.playerId : null;
+                commander.prisonerAtCityId = b.cityId;
+                this.addChronicle(`🩸 ${commander.name} выжил с ранением и попал в плен. Второй бросок: ${roll}.`);
+                this.battleState = null;
+                this.armies = this.armies.filter(a => a.id !== b.armyId);
+                this.activeArmyId = null;
+                this.showDeathNotice(commander, `🩸 ${commander.name} выжил с ранением и оказался в плену.`, () => { this.updateUI(); this.drawMap(); this.saveToStorage(); });
+            }
+        };
+    }
+
+    showDeathNotice(person, message, callback) {
+        if (typeof message === "function") { callback = message; message = null; }
+        let modal = document.getElementById("eventModal");
+        if (!modal) { if (callback) callback(); return; }
+        document.getElementById("modalTitle").innerText = message ? `⚔️ Судьба персонажа` : `💀 Смерть персонажа`;
+        document.getElementById("modalMessage").innerText = message || `${person.name} (${person.role}, ${person.age} лет) умер.`;
+        document.getElementById("modalButtons").innerHTML = `<button id="deathNoticeBtn" style="background:#5a8a4a; padding:8px 25px; margin:10px; border-radius:30px; cursor:pointer; border:none; color:white;">Закрыть</button>`;
+        modal.style.display = "flex";
+        document.getElementById("deathNoticeBtn").onclick = () => { modal.style.display = "none"; if (callback) callback(); };
+    }
+
+    moveActiveArmyTo(hex) {
+        let army = this.getArmyById(this.activeArmyId);
+        if (!army || army.status !== "marching" || army.isCamp) return false;
+        let currentHex = this.hexes.find(h => h.row === army.hexRow && h.col === army.hexCol);
+        if (!currentHex) return false;
+        let adjacent = this.getAdjacentHexes(currentHex).some(h => h.row === hex.row && h.col === hex.col);
+        if (!adjacent) {
+            alert("Армия может перемещаться только на соседний гекс.");
+            return false;
+        }
+        if (["water", "mountain", "forest"].includes(hex.terrain)) {
+            alert("Армия не может проходить по воде, горам или лесам.");
+            return false;
+        }
+        if (army.movementLeft <= 0) {
+            alert("Лимит похода на этот ход исчерпан: максимум 15 гексов.");
+            return false;
+        }
+
+        let targetCity = this.getCityAtHex(hex);
+        army.hexRow = hex.row;
+        army.hexCol = hex.col;
+        army.movementLeft--;
+        army.movedThisTurn = army.movementLeft === 0;
+
+        if (!targetCity) {
+            this.addChronicle(`⚔️ Походная армия переместилась на гекс (${hex.row + 1}, ${hex.col + 1}). Осталось ходов: ${army.movementLeft}`);
+            this.dynamicArmyMessage();
+            return true;
+        }
+        if (targetCity.playerId === army.playerId) {
+            targetCity.army = Math.min(targetCity.strength, targetCity.army + army.strength);
+            let commander = this.getPersonById(army.playerId, army.commanderId);
+            this.addChronicle(`🛡️ Армия ${commander ? commander.name : "командующего"} вернулась в гарнизон города ${targetCity.name}`);
+            this.armies = this.armies.filter(a => a.id !== army.id);
+            this.activeArmyId = null;
+            this.updateUI(); this.drawMap(); this.saveToStorage();
+            return true;
+        }
+        this.declareWarAndAttack(army, targetCity);
+        return true;
+    }
+
+    captureCity(city, army) {
+        let oldPlayer = this.players.find(p => p.id === city.playerId);
+        let newPlayer = this.players.find(p => p.id === army.playerId);
+        let commander = this.getPersonById(army.playerId, army.commanderId);
+        if (!oldPlayer || !newPlayer) return;
+
+        let residentIds = new Set([city.rulerId, city.governorId].filter(v => v !== null && v !== undefined));
+        for (let p of oldPlayer.persons) {
+            if (p.rulingCityId === city.id) residentIds.add(p.id);
+        }
+        let prisoners = oldPlayer.persons.filter(p => p.isAlive && residentIds.has(p.id));
+        for (let prisoner of prisoners) {
+            prisoner.isPrisoner = true;
+            prisoner.prisonerByPlayerId = newPlayer.id;
+            prisoner.prisonerAtCityId = city.id;
+        }
+
+        oldPlayer.cities = oldPlayer.cities.filter(c => c.id !== city.id);
+        city.playerId = newPlayer.id;
+        city.rulerId = commander ? commander.id : null;
+        city.isCapital = false;
+        city.gold = 0;
+        city.army = Math.max(0, army.strength);
+        if (city.kind === "treasury") city.treasuryForId = null;
+        newPlayer.cities.push(city);
+        this.armies = this.armies.filter(a => a.id !== army.id);
+        this.activeArmyId = null;
+
+        if (commander) commander.rulingCityId = city.id;
+        this.addChronicle(`🏰 Дом ${newPlayer.name} захватил ${city.name}. Золото города разграблено. Войск у победителя осталось: ${army.strength}.`);
+        if (prisoners.length) this.addChronicle(`⛓️ В плен попали: ${prisoners.map(p => p.name).join(", ")}.`);
+        this.checkHouseElimination(oldPlayer);
+        this.battleState = null;
+        if (city.kind === "treasury") this.chooseTreasuryAttachment(city);
+        else { this.updateUI(); this.drawMap(); this.saveToStorage(); }
+    }
+
+    chooseTreasuryAttachment(city) {
+        let player = this.players.find(p => p.id === city.playerId);
+        if (!player) return;
+        let html = `<div class="build-dialog"><h3>🏦 Захвачено город-казначейство</h3><p>Выберите, к какому вашему городу прикрепить ${city.name}, чтобы получать дополнительный доход.</p><div id="treasuryAttachList"></div></div>`;
+        document.getElementById("dynamicContent").innerHTML = html;
+        let list = document.getElementById("treasuryAttachList");
+        for (let ownCity of player.cities.filter(c => c.id !== city.id)) {
+            list.innerHTML += `<div class="enemy-card" data-city-id="${ownCity.id}">🏰 ${ownCity.name}</div>`;
+        }
+        document.querySelectorAll("[data-city-id]").forEach(el => el.onclick = () => {
+            let target = player.cities.find(c => c.id === parseFloat(el.dataset.cityId));
+            if (!target) return;
+            city.treasuryForId = target.id;
+            city.parentId = target.id;
+            this.addChronicle(`🏦 Город-казна ${city.name} прикреплён к ${target.name} Дома ${player.name}.`);
+            this.updateUI(); this.drawMap(); this.saveToStorage();
+        });
+    }
+
+    checkHouseElimination(player) {
+        let hasTerritory = player.cities.length > 0;
+        let hasLivingFamily = player.persons.some(p => p.isAlive && p.role !== "Мейстер" && p.role !== "Септон");
+        if (!hasTerritory && !hasLivingFamily) {
+            this.addChronicle(`☠️ Дом ${player.name} прекратил существование.`);
+        }
+    }
+
+    startBattle(army, city) {
+        let defenderPower = city.army + 2;
+        this.battleState = {
+            armyId: army.id, cityId: city.id, attackerWins: 0, defenderWins: 0,
+            attackerTarget: defenderPower, defenderTarget: Math.max(1, army.strength), round: 0,
+            personalCombat: false, commanderHealth: 1, commanderDamage: 0.5
+        };
+        this.showBattleMenu();
+    }
+
+    showBattleMenu(lastRoll = null) {
+        let b = this.battleState;
+        let army = b ? this.getArmyById(b.armyId) : null;
+        let city = b ? this.players.flatMap(p => p.cities).find(c => c.id === b.cityId) : null;
+        if (!b || !army || !city) return;
+        let commander = this.getPersonById(army.playerId, army.commanderId);
+        if (b.personalCombat) {
+            let html = `<div class="build-dialog"><h3>⚔️ Личный бой за ${city.name}</h3>
+                <p>Главнокомандующий: <strong>${commander ? commander.name : "неизвестен"}</strong></p>
+                <p>Здоровье героя: <strong>${b.commanderHealth}/1</strong></p>
+                <p>Урон героя за победный раунд: <strong>0.5</strong></p>
+                <p>Оставшаяся оборона города: <strong>${Math.max(0, b.personalTarget - b.attackerWins * 0.5)}</strong></p>
+                ${lastRoll ? `<p>🎲 Последний бросок: ${lastRoll.a} против ${lastRoll.d} — ${lastRoll.result}</p>` : ""}
+                <button id="battleRollBtn">🎲 Бросить кубики</button></div>`;
+            document.getElementById("dynamicContent").innerHTML = html;
+            document.getElementById("battleRollBtn").onclick = () => this.resolveBattleRound();
+            return;
+        }
+        let html = `<div class="build-dialog"><h3>⚔️ Битва за ${city.name}</h3>
+            <p>Нападающий: ${commander ? commander.name : "Командующий"} — войск ${army.strength}</p>
+            <p>Защитник: гарнизон ${city.army} + 2 за оборону = <strong>${b.attackerTarget}</strong></p>
+            <p>Победы нападающего: <strong>${b.attackerWins}/${b.attackerTarget}</strong></p>
+            <p>Победы защитника: <strong>${b.defenderWins}/${b.defenderTarget}</strong></p>
+            ${lastRoll ? `<p>🎲 Последний бросок: нападающий ${lastRoll.a}, защитник ${lastRoll.d} — ${lastRoll.result}</p>` : ""}
+            <button id="battleRollBtn">🎲 Бросить кубики</button>
+            <button id="battleRetreatBtn">↩️ Отступить</button></div>`;
+        document.getElementById("dynamicContent").innerHTML = html;
+        document.getElementById("battleRollBtn").onclick = () => this.resolveBattleRound();
+        document.getElementById("battleRetreatBtn").onclick = () => this.retreatFromBattle();
+    }
+
+    resolveBattleRound() {
+        let b = this.battleState;
+        if (!b) return;
+        let army = this.getArmyById(b.armyId);
+        let city = b ? this.players.flatMap(p => p.cities).find(c => c.id === b.cityId) : null;
+        if (!army || !city) return;
+        let a = Math.floor(Math.random() * 6) + 1;
+        let d = Math.floor(Math.random() * 6) + 1;
+        b.round++;
+        let result;
+        if (b.personalCombat) {
+            if (a > d) { b.attackerWins += 1; result = "победа героя, нанесено 0.5 урона"; }
+            else if (d > a) { b.commanderHealth = 0; result = "герой проиграл личный бой"; }
+            else result = "ничья";
+            if (b.attackerWins * 0.5 >= b.personalTarget) {
+                this.captureCityAfterBattle(city, army); return;
+            }
+            if (b.commanderHealth <= 0) { this.startSurvivalRoll(); return; }
+            this.showBattleMenu({a,d,result}); this.saveToStorage(); return;
+        }
+        if (a > d) { b.attackerWins++; city.army = Math.max(0, city.army - 1); result = "победа нападающего"; }
+        else if (d > a) { b.defenderWins++; army.strength = Math.max(0, army.strength - 1); result = "победа защитника"; }
+        else result = "ничья";
+        if (b.attackerWins >= b.attackerTarget) { this.captureCityAfterBattle(city, army); return; }
+        if (b.defenderWins >= b.defenderTarget || army.strength <= 0) {
+            if (army.strength <= 0) { this.handleCommanderDefeat(); return; }
+            this.battleState = null; this.armies = this.armies.filter(x => x.id !== army.id); this.activeArmyId = null;
+            this.addChronicle(`💀 Походная армия Дома ${this.players.find(p => p.id === army.playerId)?.name || ""} разбита у города ${city.name}.`);
+            this.updateUI(); this.drawMap(); this.saveToStorage(); return;
+        }
+        this.showBattleMenu({a,d,result}); this.drawMap(); this.saveToStorage();
+    }
+
+    captureCityAfterBattle(city, army) {
+        this.captureCity(city, army);
+    }
+
+    retreatFromBattle() {
+        let b = this.battleState; if (!b) return;
+        let army = this.getArmyById(b.armyId); if (!army) return;
+        let commander = this.getPersonById(army.playerId, army.commanderId);
+        this.addChronicle(`↩️ ${commander ? commander.name : "Командующий"} отступил с армией силой ${army.strength}.`);
+        this.battleState = null; this.activeArmyId = army.id; this.dynamicArmyMessage();
     }
 
     showActionMenu(city) {
@@ -1653,7 +2233,7 @@ class Game {
                 if (roll <= deathChance) {
                     person.isAlive = false;
                     this.addChronicle(`💀 ${person.name} из Дома ${player.name} умер в возрасте ${person.age} лет`);
-                    this.checkSuccession(player);
+                    this.showDeathNotice(person, () => { this.checkSuccession(player); this.updateUI(); });
                 }
             }
             if (person.age >= 65 && person.isRuler && person.isAlive) {
@@ -1663,27 +2243,34 @@ class Game {
                 if (roll <= deathChance) {
                     person.isAlive = false;
                     this.addChronicle(`💀 ${person.name}, правитель Дома ${player.name}, умер в возрасте ${person.age} лет`);
-                    this.checkSuccession(player);
+                    this.showDeathNotice(person, () => { this.checkSuccession(player); this.updateUI(); });
                 }
             }
         }
     }
     // Добавьте этот метод в класс Game
-    processKnighthood(player) {
-        for (let person of player.persons) {
-            if (person.isSquire && !person.isKnight && person.isAlive && person.age >= 16) {
-                let chance = 35 + (person.squireYears * 10);
-                chance = Math.min(chance, 95);
-                let roll = Math.floor(Math.random() * 100) + 1;
-                if (roll <= chance) {
-                    person.isKnight = true;
-                    person.isSquire = false;
-                    if (person.servingTo) {
-                        this.addChronicle(`⚔️ ${person.name} из Дома ${player.name} посвящён в рыцари! Служил дому ${person.servingTo}`);
+    processKnighthood() {
+        for (let player of this.players) {
+            for (let person of player.persons) {
+                if (person.isSquire && !person.isKnight && person.isAlive && person.age >= 16) {
+                    // Шанс стать рыцарем: 30% + 10% за каждый год службы
+                    let chance = 30 + (person.squireYears * 10);
+                    chance = Math.min(chance, 95);
+                    let roll = Math.floor(Math.random() * 100) + 1;
+                    if (roll <= chance) {
+                        person.isKnight = true;
+                        person.isSquire = false;
+                        // Титул рыцаря остаётся навсегда
+                        if (person.servingTo) {
+                            this.addChronicle(`⚔️ ${person.name} посвящён в рыцари! Служит дому ${person.servingTo}`);
+                        } else {
+                            this.addChronicle(`⚔️ ${person.name} посвящён в рыцари!`);
+                        }
+                        this.updateUI();
                     } else {
-                        this.addChronicle(`⚔️ ${person.name} из Дома ${player.name} посвящён в рыцари!`);
+                        // Увеличиваем опыт службы
+                        person.squireYears++;
                     }
-                    this.updateUI();
                 }
             }
         }
@@ -1747,6 +2334,8 @@ class Game {
             }
         }
 
+        deadRuler.isRuler = false;
+        deadRuler.isHeir = false;
         this.addChronicle(`⚰️ Правитель ${deadRuler.name} из дома ${familyName} умер в возрасте ${deadRuler.age} лет`);
 
         // Находим наследника ТОЛЬКО в этом же доме
@@ -3098,6 +3687,7 @@ class Game {
     endTurn() {
         let currentPlayer = this.players[this.currentPlayerIndex];
         currentPlayer.hasEndedTurn = true;
+        this.activeArmyId = null;
 
         // Сохраняем состояние
         this.saveToStorage();
@@ -3111,6 +3701,31 @@ class Game {
             this.totalYears += years;
             this.currentTurn++;
             console.log(`Прошло лет: ${years}, Ход: ${this.currentTurn}`);
+
+            // Проверяем походные армии перед сменой года. Если командующий умер, поход прекращается и войска возвращаются в исходный город, если он ещё принадлежит дому.
+            for (let army of [...this.armies]) {
+                let commander = this.getPersonById(army.playerId, army.commanderId);
+                if (!commander || !commander.isAlive || commander.age < 18) {
+                    let origin = this.players.flatMap(p => p.cities).find(c => c.id === army.originCityId && c.playerId === army.playerId);
+                    if (origin) origin.army = Math.min(origin.strength, origin.army + army.strength);
+                    this.addChronicle(`🛡️ Поход ${commander ? commander.name : "без командующего"} завершён: войска возвращены в гарнизон.`);
+                    this.armies = this.armies.filter(a => a.id !== army.id);
+                }
+            }
+            this.activeArmyId = null;
+
+            // Лагеря расходуют припасы в годах. Если запас закончился, лагерь обязан сняться.
+            for (let army of this.armies) {
+                if (army.isCamp) {
+                    army.supplyYears = Math.max(0, (army.supplyYears || 0) - years);
+                    if (army.supplyYears === 0) {
+                        army.isCamp = false;
+                        army.status = "marching";
+                        army.movementLeft = 15;
+                        this.addChronicle(`⛺ У армии ${this.getPersonById(army.playerId, army.commanderId)?.name || "командующего"} закончились припасы — лагерь снят.`);
+                    }
+                }
+            }
 
             // 1. Восстановление ресурсов
             for (let player of this.players) {
@@ -3167,6 +3782,11 @@ class Game {
 
             // 6. Переключение на первого игрока
             this.currentPlayerIndex = 0;
+            for (let army of this.armies) {
+                if (army.playerId === this.players[this.currentPlayerIndex].id && !army.isCamp) {
+                    army.movementLeft = 15; army.movedThisTurn = false;
+                }
+            }
 
             // 7. Проверка предложений (ВАЖНО: после переключения)
             this.checkPendingProposals();
@@ -3183,6 +3803,11 @@ class Game {
         } else {
             // Переключение на следующего игрока
             this.currentPlayerIndex = (this.currentPlayerIndex + 1) % this.players.length;
+            for (let army of this.armies) {
+                if (army.playerId === this.players[this.currentPlayerIndex].id && !army.isCamp) {
+                    army.movementLeft = 15; army.movedThisTurn = false;
+                }
+            }
             console.log(`Переключение на игрока: ${this.players[this.currentPlayerIndex].name}`);
 
             // Проверяем предложения для следующего игрока
@@ -3205,13 +3830,61 @@ class Game {
         <p>Выберите действие:</p>
         <button id="marriageWithHouseBtn">💒 Брак с другим домом</button>
         <button id="marriageWithNobleBtn">👰 Женитьба на дворянке</button>
+        <button id="prisonerBtn">⛓️ Пленные и выкуп</button>
         <button id="closeDiplo">Закрыть</button>
     </div>`;
         document.getElementById("dynamicContent").innerHTML = html;
 
         document.getElementById("marriageWithHouseBtn").onclick = () => this.selectOwnPersonForMarriage();
         document.getElementById("marriageWithNobleBtn").onclick = () => this.marryNoblewoman();
+        document.getElementById("prisonerBtn").onclick = () => this.showPrisonerDiplomacy();
         document.getElementById("closeDiplo").onclick = () => this.updateUI();
+    }
+
+    showPrisonerDiplomacy() {
+        let currentPlayer = this.players[this.currentPlayerIndex];
+        let prisonersHeld = this.players.flatMap(p => p.persons).filter(p => p.isAlive && p.isPrisoner && p.prisonerByPlayerId === currentPlayer.id);
+        let ownPrisoners = currentPlayer.persons.filter(p => p.isAlive && p.isPrisoner);
+        let html = `<div class="build-dialog"><h3>⛓️ Пленные</h3><div id="prisonersList"></div><button id="backPrisoners">Назад</button></div>`;
+        document.getElementById("dynamicContent").innerHTML = html;
+        let div = document.getElementById("prisonersList");
+        if (prisonersHeld.length) {
+            div.innerHTML += `<h4>Пленные у вас</h4>`;
+            for (let p of prisonersHeld) div.innerHTML += `<div class="enemy-card" data-held-prisoner="${p.id}">⛓️ ${p.name} — <button>Назначить выкуп</button></div>`;
+        }
+        if (ownPrisoners.length) {
+            div.innerHTML += `<h4>Ваши пленные</h4>`;
+            for (let p of ownPrisoners) div.innerHTML += `<div class="enemy-card" data-own-prisoner="${p.id}">⛓️ ${p.name} — ${this.players.find(x=>x.id===p.prisonerByPlayerId)?.name || "неизвестный дом"}</div>`;
+        }
+        if (!prisonersHeld.length && !ownPrisoners.length) div.innerHTML = `<p>Пленных нет.</p>`;
+        document.querySelectorAll("[data-held-prisoner]").forEach(el => el.onclick = () => this.setPrisonerRansom(parseFloat(el.dataset.heldPrisoner)));
+        document.querySelectorAll("[data-own-prisoner]").forEach(el => el.onclick = () => this.payPrisonerRansom(parseFloat(el.dataset.ownPrisoner)));
+        document.getElementById("backPrisoners").onclick = () => this.showDiplomacy();
+    }
+
+    setPrisonerRansom(personId) {
+        let prisoner = this.players.flatMap(p=>p.persons).find(p=>p.id===personId && p.isPrisoner);
+        if (!prisoner) return;
+        this.showPromptModal("⛓️ Выкуп за пленного", `Установите сумму выкупа для ${prisoner.name} (золото):`, prisoner.ransom || 3, value => {
+            let amount = Math.max(1, parseInt(value) || 3); prisoner.ransom = amount;
+            this.addChronicle(`💰 За ${prisoner.name} установлен выкуп ${amount} золота.`); this.showPrisonerDiplomacy();
+        });
+    }
+
+    payPrisonerRansom(personId) {
+        let currentPlayer = this.players[this.currentPlayerIndex];
+        let prisoner = currentPlayer.persons.find(p=>p.id===personId && p.isPrisoner);
+        if (!prisoner) return;
+        let captor = this.players.find(p=>p.id===prisoner.prisonerByPlayerId);
+        let ransom = prisoner.ransom || 3;
+        let gold = currentPlayer.cities.reduce((s,c)=>s+c.gold,0);
+        if (!captor || gold < ransom) { alert(`Нужно ${ransom} золота для выкупа.`); return; }
+        let left = ransom;
+        for (let c of currentPlayer.cities) { let take=Math.min(c.gold,left); c.gold-=take; left-=take; if(left<=0) break; }
+        let target = captor.cities[0]; if(target) target.gold=Math.min(target.strength,target.gold+ransom);
+        prisoner.isPrisoner=false; prisoner.prisonerByPlayerId=null; prisoner.prisonerAtCityId=null; prisoner.ransom=0;
+        this.addChronicle(`🤝 ${currentPlayer.name} выкупил ${prisoner.name} за ${ransom} золота у Дома ${captor.name}.`);
+        this.showPrisonerDiplomacy(); this.saveToStorage();
     }
 
     selectOwnPersonForMarriage() {
@@ -3313,35 +3986,47 @@ class Game {
     }
 
     selectPersonFromHouse(house) {
-        // ШАГ 2: Выбор конкретной персоны из выбранного дома
-        let html = `<div class="build-dialog">
-        <h3>💍 Шаг 2: Выберите ${house.type === "main" ? "члена семьи" : "вассала"}</h3>
-        <p>Из дома: <strong>${house.name}</strong></p>
-        <div id="personsList"></div>
-        <button id="backToHouses">Назад</button>
-    </div>`;
+        let currentPlayer = this.players[this.currentPlayerIndex];
+        let availablePersons = house.persons.filter(p => !p.spouseId && p.age >= 16 && p.isAlive && !p.isPrisoner);
+        if (!availablePersons.length) { alert(`В доме ${house.name} нет доступных кандидатов`); return; }
+        let html = `<div class="build-dialog"><h3>💍 Выберите члена семьи</h3><p>Дом: <strong>${house.name}</strong></p><div id="personsList"></div><button id="backToHouses">Назад</button></div>`;
         document.getElementById("dynamicContent").innerHTML = html;
-
-        let personsDiv = document.getElementById("personsList");
-        for (let person of house.persons) {
-            personsDiv.innerHTML += `<div class="family-member" data-person-id="${person.id}" data-person-name="${person.name}" data-person-gender="${person.gender}" data-person-house="${house.name}">
-            ${person.name} (${person.role}, ${person.age} лет, ${person.gender === "male" ? "Мужчина" : "Женщина"})
-        </div>`;
-        }
-
-        document.querySelectorAll("[data-person-id]").forEach(el => {
-            el.onclick = () => {
-                let sourcePerson = {
-                    id: parseFloat(el.dataset.personId),
-                    name: el.dataset.personName,
-                    gender: el.dataset.personGender,
-                    houseName: el.dataset.personHouse
-                };
-                this.selectTargetHouseForMarriage(sourcePerson);
-            };
+        let div = document.getElementById("personsList");
+        for (let p of availablePersons) div.innerHTML += `<div class="family-member" data-person-id="${p.id}">${p.name} (${p.role}, ${p.age} лет)</div>`;
+        document.querySelectorAll("[data-person-id]").forEach(el => el.onclick = () => {
+            let source = currentPlayer.persons.find(p => p.id === parseFloat(el.dataset.personId));
+            if (!source) return;
+            source = {id:source.id,name:source.name,gender:source.gender,role:source.role,houseName:house.name,houseType:house.type};
+            this.selectAllMarriageCandidates(currentPlayer, source);
         });
-
         document.getElementById("backToHouses").onclick = () => this.selectOwnPersonForMarriage();
+    }
+
+    selectAllMarriageCandidates(currentPlayer, sourcePerson) {
+        let candidates = [];
+        let seen = new Set();
+        for (let player of this.players) {
+            let vassalIds = new Set();
+            if (player.vassalFamily) for (let p of player.vassalFamily) vassalIds.add(p.id);
+            if (player.vassalHouses) for (let vh of player.vassalHouses) for (let p of vh.family || []) vassalIds.add(p.id);
+            for (let p of player.persons) {
+                if (seen.has(p.id) || p.id === sourcePerson.id || !p.isAlive || p.isPrisoner || p.spouseId || p.age < 16 || p.gender === sourcePerson.gender) continue;
+                let isVassal = vassalIds.has(p.id);
+                let houseName = isVassal ? ((player.vassalFamily || []).find(v => v.id === p.id) ? (player.vassalHouseName || "Вассалы") : ((player.vassalHouses || []).find(vh => (vh.family || []).some(v => v.id === p.id))?.houseName || player.name)) : player.name;
+                candidates.push({person:p, player, houseName}); seen.add(p.id);
+            }
+        }
+        if (!candidates.length) { alert("Нет доступных кандидатов во всех домах"); return; }
+        let html = `<div class="build-dialog"><h3>💍 Выберите жениха/невесту</h3><p>Кандидаты из всех домов:</p><div id="allMarriageCandidates"></div><button id="backMarriageSource">Назад</button></div>`;
+        document.getElementById("dynamicContent").innerHTML = html;
+        let div = document.getElementById("allMarriageCandidates");
+        for (let c of candidates) div.innerHTML += `<div class="family-member" data-candidate-id="${c.person.id}"><b>${c.person.name}</b> (${c.person.role}, ${c.person.age} лет) — Дом ${c.houseName}</div>`;
+        document.querySelectorAll("[data-candidate-id]").forEach(el => el.onclick = () => {
+            let c = candidates.find(x => x.person.id === parseFloat(el.dataset.candidateId)); if (!c) return;
+            this.pendingMarriageProposals.push({fromPlayerId:currentPlayer.id,toPlayerId:c.player.id,toHouseType:"house",toHouseName:c.houseName,sourcePersonId:sourcePerson.id,sourcePersonName:sourcePerson.name,sourcePersonHouse:sourcePerson.houseName,targetPersonId:c.person.id,targetPersonName:c.person.name});
+            this.addChronicle(`💌 Дом ${currentPlayer.name} предложил брак между ${sourcePerson.name} и ${c.person.name} дому ${c.houseName}.`); this.updateUI();
+        });
+        document.getElementById("backMarriageSource").onclick = () => this.selectPersonFromHouse({name:sourcePerson.houseName,type:sourcePerson.houseType,persons:currentPlayer.persons.filter(p=>!p.spouseId&&p.age>=16&&p.isAlive)});
     }
 
     selectTargetHouseForMarriage(sourcePerson) {
@@ -4159,110 +4844,63 @@ class Game {
 
     showSquireMenu() {
         let currentPlayer = this.players[this.currentPlayerIndex];
-        let eligibleBoys = [];
+        let vassalInfo = new Map();
+        if (currentPlayer.vassalFamily) for (let p of currentPlayer.vassalFamily) vassalInfo.set(p.id, currentPlayer.vassalHouseName || "Вассалы");
+        if (currentPlayer.vassalHouses) for (let vh of currentPlayer.vassalHouses) for (let p of vh.family || []) vassalInfo.set(p.id, vh.houseName);
 
-        // Собираем всех мальчиков из всех домов игрока
+        let unique = new Map();
         for (let person of currentPlayer.persons) {
-            if (person.gender === "male" && !person.isSquire && !person.isKnight && person.age >= 12 && person.age < 16 && person.isAlive) {
-                eligibleBoys.push({
-                    id: person.id,
-                    name: person.name,
-                    age: person.age,
-                    houseName: currentPlayer.name
-                });
-            }
+            if (person.gender !== "male" || person.isSquire || person.isKnight || !person.isAlive || person.age < 12 || person.age > 20) continue;
+            let houseName = vassalInfo.get(person.id) || currentPlayer.name;
+            unique.set(person.id, { id: person.id, name: person.name, age: person.age, houseName });
         }
-
-        if (currentPlayer.vassalFamily) {
-            for (let person of currentPlayer.vassalFamily) {
-                if (person.gender === "male" && !person.isSquire && !person.isKnight && person.age >= 12 && person.age < 16 && person.isAlive) {
-                    eligibleBoys.push({
-                        id: person.id,
-                        name: person.name,
-                        age: person.age,
-                        houseName: currentPlayer.vassalHouseName || "Вассалы"
-                    });
-                }
-            }
-        }
-
-        if (currentPlayer.vassalHouses) {
-            for (let vh of currentPlayer.vassalHouses) {
-                for (let person of vh.family) {
-                    if (person.gender === "male" && !person.isSquire && !person.isKnight && person.age >= 12 && person.age < 16 && person.isAlive) {
-                        eligibleBoys.push({
-                            id: person.id,
-                            name: person.name,
-                            age: person.age,
-                            houseName: vh.houseName
-                        });
-                    }
-                }
-            }
-        }
-
-        if (eligibleBoys.length === 0) {
-            alert("Нет мальчиков от 12 до 16 лет, которых можно отдать в оруженосцы");
-            return;
-        }
-
-        let html = `<div class="build-dialog">
-        <h3>🛡️ Отдать в оруженосцы - Выберите мальчика</h3>
-        <div id="boysList"></div>
-        <button id="cancelSquire">Отмена</button>
-    </div>`;
+        let eligibleBoys = [...unique.values()];
+        if (eligibleBoys.length === 0) { alert("Нет мужчин от 12 до 20 лет, которых можно отдать в оруженосцы"); return; }
+        let html = `<div class="build-dialog"><h3>🛡️ Отдать в оруженосцы — выберите кандидата</h3><div id="boysList"></div><button id="cancelSquire">Отмена</button></div>`;
         document.getElementById("dynamicContent").innerHTML = html;
-
         let boysDiv = document.getElementById("boysList");
-        for (let boy of eligibleBoys) {
-            boysDiv.innerHTML += `<div class="family-member" data-boy-id="${boy.id}" data-boy-name="${boy.name}" data-boy-house="${boy.houseName}">
-            ${boy.name} (${boy.age} лет) - Дом ${boy.houseName}
-        </div>`;
-        }
-
-        document.querySelectorAll("[data-boy-id]").forEach(el => {
-            el.onclick = () => {
-                let boyId = parseFloat(el.dataset.boyId);
-                let boyName = el.dataset.boyName;
-                let boyHouse = el.dataset.boyHouse;
-                this.selectLordForSquireUniversal(currentPlayer, boyId, boyName, boyHouse);
-            };
-        });
-
+        for (let boy of eligibleBoys) boysDiv.innerHTML += `<div class="family-member" data-boy-id="${boy.id}" data-boy-name="${boy.name}" data-boy-house="${boy.houseName}">${boy.name} (${boy.age} лет) — Дом ${boy.houseName}</div>`;
+        document.querySelectorAll("[data-boy-id]").forEach(el => el.onclick = () => this.selectLordForSquireUniversal(currentPlayer, parseFloat(el.dataset.boyId), el.dataset.boyName, el.dataset.boyHouse));
         document.getElementById("cancelSquire").onclick = () => this.updateUI();
     }
 
     selectLordForSquireUniversal(currentPlayer, boyId, boyName, boyHouse) {
         let targetHouses = [];
+        let houseNames = new Set();
 
         for (let player of this.players) {
-            if (player.id === currentPlayer.id && player.name === boyHouse) continue;
+            // Основной дом
+            if (player.name !== boyHouse && !houseNames.has(player.name)) {
+                targetHouses.push({
+                    id: player.id,
+                    name: player.name,
+                    type: "main",
+                    player: player
+                });
+                houseNames.add(player.name);
+            }
 
-            targetHouses.push({
-                id: player.id,
-                name: player.name,
-                type: "main",
-                player: player
-            });
-
-            if (player.vassalFamily && player.vassalFamily.length > 0 && (player.id !== currentPlayer.id || player.vassalHouseName !== boyHouse)) {
+            // Вассальные дома
+            if (player.vassalFamily && player.vassalFamily.length > 0 && player.vassalHouseName !== boyHouse && !houseNames.has(player.vassalHouseName)) {
                 targetHouses.push({
                     id: `vassal_${player.id}_initial`,
                     name: player.vassalHouseName || "Вассалы",
                     type: "vassal",
                     player: player
                 });
+                houseNames.add(player.vassalHouseName);
             }
 
             if (player.vassalHouses) {
                 for (let vh of player.vassalHouses) {
-                    if (vh.houseName !== boyHouse) {
+                    if (vh.houseName !== boyHouse && !houseNames.has(vh.houseName)) {
                         targetHouses.push({
                             id: vh.id,
                             name: vh.houseName,
                             type: "vassal",
                             player: player
                         });
+                        houseNames.add(vh.houseName);
                     }
                 }
             }
@@ -4438,6 +5076,24 @@ class Game {
         let my = (e.clientY - rect.top) * (canvas.height / rect.height);
         let hex = this.getHexAtPixel(mx, my);
         if (!hex) return;
+
+        if (!this.creationPhase && this.gameStarted && !this.battleState) {
+            if (this.activeArmyId) {
+                let activeArmy = this.getArmyById(this.activeArmyId);
+                if (activeArmy && activeArmy.playerId === this.players[this.currentPlayerIndex].id) {
+                    this.moveActiveArmyTo(hex);
+                    return;
+                }
+                this.activeArmyId = null;
+            }
+
+            let armyOnHex = this.armies.find(a => a.playerId === this.players[this.currentPlayerIndex].id && a.status === "marching" && a.hexRow === hex.row && a.hexCol === hex.col);
+            if (armyOnHex) {
+                this.activeArmyId = armyOnHex.id;
+                this.dynamicArmyMessage();
+                return;
+            }
+        }
 
         if (hex.terrain === "water") {
             alert("Нельзя строить на воде!");
